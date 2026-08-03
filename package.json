@@ -1,0 +1,41 @@
+{
+  "name": "portalmpc",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PortalMPC — sistema interno de gestão do escritório contábil. Módulo de Legalização.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "import:planilhas": "tsx scripts/import-planilhas.ts",
+    "import:planilhas:sql": "tsx scripts/import-planilhas.ts --emit-sql",
+    "seed:usuarios": "tsx scripts/seed-usuarios.ts",
+    "import:referencias": "tsx scripts/import-referencias.ts"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.12.4",
+    "@supabase/supabase-js": "^2.95.0",
+    "clsx": "^2.1.1",
+    "exceljs": "^4.4.0",
+    "lucide-react": "^1.28.0",
+    "next": "^15.5.4",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "tailwind-merge": "^3.3.1"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.6",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "dotenv": "^17.2.3",
+    "eslint": "^9.17.0",
+    "eslint-config-next": "^15.5.4",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
