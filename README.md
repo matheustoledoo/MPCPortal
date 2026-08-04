@@ -275,6 +275,29 @@ Um usuário não consegue alterar a própria função, área ou situação — o
 | "O servidor de autenticação recusou a consulta" | Conta criada por SQL com colunas de token em NULL | Rode a migration `0009` ou recrie com `npm run seed:usuarios` |
 | "Chave do Supabase inválida" | `NEXT_PUBLIC_SUPABASE_ANON_KEY` errada ou ausente | Confira o `.env.local` |
 | "A sessão não pôde ser salva" | Navegador bloqueando cookies de `localhost` | Libere cookies para o site |
+| Entra e volta para o login, com `AuthRetryableFetchError: fetch failed` no terminal | Rede corporativa com inspeção de TLS: o Node não confia no certificado da empresa | Suba com `$env:NODE_OPTIONS="--use-system-ca"` (veja abaixo) |
+
+#### Rede corporativa (proxy com inspeção de TLS)
+
+O navegador confia no certificado da empresa porque ele está no Windows; o
+Node.js usa a própria lista de autoridades e recusa a conexão. O portal abre,
+o login autentica, mas o servidor não consegue validar a sessão — e o usuário
+volta para a tela de login.
+
+```powershell
+# PowerShell — Node 22 ou superior
+$env:NODE_OPTIONS="--use-system-ca"
+npm run start
+```
+
+```powershell
+# Alternativa: apontar o certificado raiz exportado da empresa
+$env:NODE_EXTRA_CA_CERTS="C:\caminho\ca-empresa.cer"
+npm run start
+```
+
+Quando isso acontece, o portal agora mostra uma tela explicando a causa e o
+comando, em vez de ficar repetindo a tela de login.
 
 ### Redirecionamento após o login
 
