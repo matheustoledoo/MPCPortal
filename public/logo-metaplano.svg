@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 372 104" role="img" aria-label="Meta Plano Contábil">
+  <title>Meta Plano Contábil</title>
+  <defs>
+    <linearGradient id="mp-vermelho" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#6d1a20" />
+      <stop offset="1" stop-color="#b93540" />
+    </linearGradient>
+    <linearGradient id="mp-grafite" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6b7280" />
+      <stop offset="1" stop-color="#1f2937" />
+    </linearGradient>
+  </defs>
+
+  <!-- Símbolo: barras ascendentes + seta de crescimento + "P" -->
+  <g>
+    <rect x="4" y="48" width="14" height="34" rx="2" fill="url(#mp-vermelho)" />
+    <rect x="22" y="35" width="14" height="47" rx="2" fill="url(#mp-vermelho)" />
+    <rect x="40" y="22" width="14" height="60" rx="2" fill="url(#mp-vermelho)" />
+
+    <path d="M7 46 L28 27 L43 36 L72 9" fill="none" stroke="url(#mp-vermelho)"
+          stroke-width="7" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M59 7 L77 4 L75 22 Z" fill="#6d1a20" />
+
+    <path d="M61 82 V26 h18 a18 18 0 0 1 0 36 h-5" fill="none" stroke="url(#mp-grafite)"
+          stroke-width="12" stroke-linecap="square" />
+  </g>
+
+  <!-- Marca nominal — o texto foi dimensionado para caber no viewBox -->
+  <g>
+    <text x="104" y="53" font-family="Georgia, 'Times New Roman', Times, serif"
+          font-size="31" font-weight="700" fill="#9b1c24">META PLANO</text>
+    <text x="106" y="75" font-family="Arial, Helvetica, sans-serif"
+          font-size="13.5" letter-spacing="5.6" fill="#4b5563">CONTÁBIL</text>
+    <text x="352" y="24" font-family="Arial, Helvetica, sans-serif"
+          font-size="12" fill="#6b7280">®</text>
+  </g>
+</svg>

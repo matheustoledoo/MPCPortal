@@ -133,7 +133,7 @@ export function MenuLateral({ perfil }: { perfil: Perfil }) {
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-borda px-4">
           {recolhido ? (
             <div className="mx-auto hidden lg:block">
-              <MarcaMPC tamanho="sm" className="[&>span]:hidden" />
+              <MarcaMPC tamanho="sm" somenteSimbolo />
             </div>
           ) : (
             <MarcaMPC tamanho="sm" />

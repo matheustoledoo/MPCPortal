@@ -1,6 +1,6 @@
 # PortalMPC
 
-Sistema interno de gestão do escritório contábil MPC. Esta primeira etapa entrega o
+Sistema interno de gestão da **Meta Plano Contábil**. Esta primeira etapa entrega o
 **módulo de Legalização** completo — autenticação, controle de acesso por área e função,
 base de dados no Supabase, importação real das planilhas de trabalho e uma tela de
 edição no estilo planilha.
@@ -74,6 +74,7 @@ npm run typecheck
 | Banco / Auth | **Supabase** (PostgreSQL + Auth + RLS) | Permissão aplicada no banco, não só na tela |
 | Excel | **ExcelJS** | Leitura no ETL e geração da exportação no servidor |
 | Ícones | **lucide-react** | Conjunto consistente |
+| Marca | SVG em `public/` | Trocar a logo não exige mexer em código |
 
 ---
 
@@ -118,7 +119,7 @@ scripts/
 └── seed-usuarios.ts              # criação de usuários
 
 supabase/
-├── migrations/                   # 0001 … 0008
+├── migrations/                   # 0001 … 0009
 └── functions/importar-legalizacao/   # Edge Function usada na carga inicial
 ```
 
@@ -246,7 +247,7 @@ Pela tela **Usuários** (somente admin) ou por SQL:
 ```sql
 update public.profiles
 set area = 'legalizacao', role = 'gestor'
-where email = 'maria@escritoriompc.com.br';
+where email = 'maria@metaplanocontabil.com.br';
 ```
 
 **Áreas:** `legalizacao`, `fiscal`, `contabil`, `departamento_pessoal`, `administracao`

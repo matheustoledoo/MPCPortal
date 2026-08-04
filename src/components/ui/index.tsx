@@ -11,6 +11,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -100,7 +101,7 @@ export interface PropsCampo extends InputHTMLAttributes<HTMLInputElement> {
 }
 
 export function Campo({ rotulo, erro, dica, iconeInicial, className, id, ...resto }: PropsCampo) {
-  const gerado = useId('campo');
+  const gerado = useId();
   const idCampo = id ?? gerado;
 
   return (
@@ -147,7 +148,7 @@ export interface PropsSelecao extends SelectHTMLAttributes<HTMLSelectElement> {
 }
 
 export function Selecao({ rotulo, erro, className, id, children, ...resto }: PropsSelecao) {
-  const gerado = useId('selecao');
+  const gerado = useId();
   const idCampo = id ?? gerado;
 
   return (
@@ -175,7 +176,7 @@ export interface PropsAreaTexto extends TextareaHTMLAttributes<HTMLTextAreaEleme
 }
 
 export function AreaTexto({ rotulo, erro, className, id, ...resto }: PropsAreaTexto) {
-  const gerado = useId('area');
+  const gerado = useId();
   const idCampo = id ?? gerado;
 
   return (
@@ -194,13 +195,6 @@ export function AreaTexto({ rotulo, erro, className, id, ...resto }: PropsAreaTe
       {erro && <p className="mt-1.5 text-xs font-medium text-erro">{erro}</p>}
     </div>
   );
-}
-
-/** useId próprio: mantém SSR e cliente com o mesmo id sem depender da versão do React. */
-function useId(prefixo: string): string {
-  const ref = useRef<string>('');
-  if (!ref.current) ref.current = `${prefixo}-${Math.random().toString(36).slice(2, 9)}`;
-  return ref.current;
 }
 
 /* -------------------------------------------------------------------------- */
