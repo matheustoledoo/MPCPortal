@@ -1,0 +1,149 @@
+@import 'tailwindcss';
+
+/* ---------------------------------------------------------------------------
+   PortalMPC — identidade visual
+   Azul-ardósia sóbrio para um escritório contábil, com acentos discretos de
+   estado (sucesso/alerta/erro). Tokens ficam aqui; componentes só consomem.
+--------------------------------------------------------------------------- */
+
+@theme {
+  --color-marca-50: #f0f5fb;
+  --color-marca-100: #dde9f6;
+  --color-marca-200: #c3d8ef;
+  --color-marca-300: #99bee3;
+  --color-marca-400: #689cd4;
+  --color-marca-500: #467dc4;
+  --color-marca-600: #3463a8;
+  --color-marca-700: #2b5089;
+  --color-marca-800: #274572;
+  --color-marca-900: #1e3555;
+  --color-marca-950: #172740;
+
+  --color-superficie: #f6f8fa;
+  --color-superficie-elevada: #ffffff;
+  --color-borda: #e2e8f0;
+  --color-borda-forte: #cbd5e1;
+  --color-texto: #0f172a;
+  --color-texto-suave: #475569;
+  --color-texto-fraco: #94a3b8;
+
+  --color-sucesso: #15803d;
+  --color-sucesso-suave: #dcfce7;
+  --color-alerta: #b45309;
+  --color-alerta-suave: #fef3c7;
+  --color-erro: #b91c1c;
+  --color-erro-suave: #fee2e2;
+  --color-info: #1d4ed8;
+  --color-info-suave: #dbeafe;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+}
+
+* {
+  border-color: var(--color-borda);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background-color: var(--color-superficie);
+  color: var(--color-texto);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Foco visível e consistente — acessibilidade em teclado */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-marca-500);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Barra de rolagem discreta, importante numa tela tipo planilha */
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-borda-forte);
+  border-radius: 6px;
+  border: 3px solid var(--color-superficie);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-texto-fraco);
+}
+
+/* Utilitários da planilha ------------------------------------------------- */
+
+.planilha-scroll {
+  scrollbar-gutter: stable;
+}
+
+/* Célula congelada: precisa vencer o z-index das linhas e ter fundo opaco. */
+.celula-fixa {
+  position: sticky;
+  background-color: var(--color-superficie-elevada);
+  z-index: 2;
+}
+
+thead .celula-fixa {
+  z-index: 4;
+}
+
+.linha-selecionada .celula-fixa {
+  background-color: var(--color-marca-50);
+}
+
+tbody tr:hover .celula-fixa {
+  background-color: var(--color-marca-50);
+}
+
+@keyframes surgir {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animar-surgir {
+  animation: surgir 0.18s ease-out;
+}
+
+@keyframes deslizar-direita {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.animar-painel {
+  animation: deslizar-direita 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media print {
+  .sem-impressao {
+    display: none !important;
+  }
+}

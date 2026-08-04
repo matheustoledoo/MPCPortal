@@ -1,0 +1,31 @@
+# dependências
+/node_modules
+/.pnp
+.pnp.*
+
+# build
+/.next/
+/out/
+/build
+*.tsbuildinfo
+next-env.d.ts
+
+# ambiente — NUNCA versionar chaves
+.env
+.env.local
+.env*.local
+
+# planilhas de origem: contêm dados reais de clientes e honorários.
+# Coloque os arquivos aqui localmente para rodar o ETL.
+/data/planilhas/*.xlsx
+/data/relatorios/*.json
+
+# lotes SQL gerados (contêm os dados dos clientes)
+/supabase/seed/legalizacao_import.sql
+/supabase/seed/lotes/
+
+# sistema
+.DS_Store
+*.pem
+/coverage
+.vercel
