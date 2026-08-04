@@ -1,23 +1,31 @@
 @import 'tailwindcss';
 
 /* ---------------------------------------------------------------------------
-   PortalMPC — identidade visual
-   Azul-ardósia sóbrio para um escritório contábil, com acentos discretos de
-   estado (sucesso/alerta/erro). Tokens ficam aqui; componentes só consomem.
+   PortalMPC — identidade visual Meta Plano Contábil
+   Vermelho da marca como cor principal, cinza-grafite como apoio e acentos
+   discretos de estado. Tokens ficam aqui; os componentes só consomem.
 --------------------------------------------------------------------------- */
 
 @theme {
-  --color-marca-50: #f0f5fb;
-  --color-marca-100: #dde9f6;
-  --color-marca-200: #c3d8ef;
-  --color-marca-300: #99bee3;
-  --color-marca-400: #689cd4;
-  --color-marca-500: #467dc4;
-  --color-marca-600: #3463a8;
-  --color-marca-700: #2b5089;
-  --color-marca-800: #274572;
-  --color-marca-900: #1e3555;
-  --color-marca-950: #172740;
+  /* Vermelho da marca Meta Plano Contábil, amostrado da logo oficial. */
+  --color-marca-50: #fdf4f4;
+  --color-marca-100: #fbe6e7;
+  --color-marca-200: #f6d0d2;
+  --color-marca-300: #eeadb0;
+  --color-marca-400: #e17d83;
+  --color-marca-500: #d0525a;
+  --color-marca-600: #b93540;
+  --color-marca-700: #9b1c24;
+  --color-marca-800: #821a21;
+  --color-marca-900: #6d1a20;
+  --color-marca-950: #3d090d;
+
+  /* Cinza-grafite do "P" e da palavra CONTÁBIL, para textos e apoios. */
+  --color-grafite-400: #9ca3af;
+  --color-grafite-500: #6b7280;
+  --color-grafite-600: #4b5563;
+  --color-grafite-700: #374151;
+  --color-grafite-800: #1f2937;
 
   --color-superficie: #f6f8fa;
   --color-superficie-elevada: #ffffff;

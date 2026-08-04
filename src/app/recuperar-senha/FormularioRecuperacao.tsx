@@ -64,7 +64,7 @@ export function FormularioRecuperacao() {
         type="email"
         required
         autoComplete="email"
-        placeholder="nome@escritoriompc.com.br"
+        placeholder="nome@metaplanocontabil.com.br"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         disabled={carregando}

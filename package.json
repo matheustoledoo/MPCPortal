@@ -2,7 +2,7 @@
   "name": "portalmpc",
   "version": "0.1.0",
   "private": true,
-  "description": "PortalMPC — sistema interno de gestão do escritório contábil. Módulo de Legalização.",
+  "description": "PortalMPC — sistema interno de gestão da Meta Plano Contábil. Módulo de Legalização.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

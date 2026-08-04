@@ -16,7 +16,18 @@ function traduzirErro(mensagem: string): string {
   if (m.includes('too many requests') || m.includes('rate limit'))
     return 'Muitas tentativas seguidas. Aguarde um minuto e tente novamente.';
   if (m.includes('network') || m.includes('fetch')) return 'Falha de conexão. Verifique sua internet.';
-  return 'Não foi possível entrar. Tente novamente em instantes.';
+
+  // Falha no servidor de autenticação — tipicamente conta criada por SQL com
+  // colunas de token em NULL. A migration 0009 corrige; sem uma mensagem
+  // específica isso vira "não foi possível entrar" e custa horas de busca.
+  if (m.includes('database error') || m.includes('querying schema')) {
+    return 'O servidor de autenticação recusou a consulta. Rode a migration 0009 ou recrie o usuário com "npm run seed:usuarios".';
+  }
+  if (m.includes('invalid api key') || m.includes('no api key')) {
+    return 'Chave do Supabase inválida. Confira NEXT_PUBLIC_SUPABASE_ANON_KEY no .env.local.';
+  }
+
+  return `Não foi possível entrar (${mensagem}).`;
 }
 
 export function FormularioLogin({ proximo }: { proximo?: string }) {
@@ -85,7 +96,7 @@ export function FormularioLogin({ proximo }: { proximo?: string }) {
         name="email"
         autoComplete="email"
         required
-        placeholder="nome@escritoriompc.com.br"
+        placeholder="nome@metaplanocontabil.com.br"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         disabled={carregando}

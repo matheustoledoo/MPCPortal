@@ -23,7 +23,7 @@ export default async function PaginaLogin({
   return (
     <main className="flex min-h-screen">
       {/* Painel institucional — recolhido em telas pequenas */}
-      <section className="relative hidden w-1/2 flex-col justify-between bg-marca-800 p-12 text-white lg:flex xl:w-[55%]">
+      <section className="relative hidden w-1/2 flex-col justify-between bg-gradient-to-br from-marca-800 via-marca-900 to-marca-950 p-12 text-white lg:flex xl:w-[55%]">
         <div
           className="pointer-events-none absolute inset-0 opacity-[0.07]"
           style={{
