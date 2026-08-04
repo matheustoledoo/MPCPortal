@@ -2,14 +2,12 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 
-import { useRouter } from 'next/navigation';
 import { Lock } from 'lucide-react';
 
 import { Botao, Campo, Carregando } from '@/components/ui';
 import { criarClienteNavegador } from '@/lib/supabase/client';
 
 export function FormularioNovaSenha() {
-  const router = useRouter();
   const [senha, setSenha] = useState('');
   const [confirmacao, setConfirmacao] = useState('');
   const [erro, setErro] = useState<string | null>(null);
@@ -43,8 +41,9 @@ export function FormularioNovaSenha() {
         setErro('Não foi possível alterar a senha. Solicite um novo link de recuperação.');
         return;
       }
-      router.replace('/');
-      router.refresh();
+      // Load completo: o servidor decide a rota inicial com o cookie novo.
+      window.location.assign('/');
+      return;
     } finally {
       setCarregando(false);
     }

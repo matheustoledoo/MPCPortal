@@ -3,7 +3,7 @@
 import { useState } from 'react';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import {
   Building2,
   Calculator,
@@ -232,15 +232,14 @@ function ItemNavegacao({
 }
 
 function RodapeMenu({ perfil, recolhido }: { perfil: Perfil; recolhido: boolean }) {
-  const router = useRouter();
   const [saindo, setSaindo] = useState(false);
 
   async function sair() {
     setSaindo(true);
     const supabase = criarClienteNavegador();
     await supabase.auth.signOut();
-    router.replace('/login');
-    router.refresh();
+    // Load completo garante que o servidor deixe de ver a sessão encerrada.
+    window.location.assign('/login');
   }
 
   const iniciais = perfil.nome
