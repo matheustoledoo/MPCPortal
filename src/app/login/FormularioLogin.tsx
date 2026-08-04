@@ -2,11 +2,12 @@
 
 import { useState, type FormEvent } from 'react';
 
-import { useRouter } from 'next/navigation';
 import { Eye, EyeOff, Lock, Mail } from 'lucide-react';
 
 import { Botao, Campo } from '@/components/ui';
+import { rotaInicial } from '@/lib/permissoes';
 import { criarClienteNavegador } from '@/lib/supabase/client';
+import type { Perfil } from '@/types/banco';
 
 /** Traduz os erros do Supabase Auth para mensagens úteis em português. */
 function traduzirErro(mensagem: string): string {
@@ -31,7 +32,6 @@ function traduzirErro(mensagem: string): string {
 }
 
 export function FormularioLogin({ proximo }: { proximo?: string }) {
-  const router = useRouter();
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [mostrarSenha, setMostrarSenha] = useState(false);
@@ -56,12 +56,17 @@ export function FormularioLogin({ proximo }: { proximo?: string }) {
       }
 
       // Usuário desativado ou sem perfil não entra, mesmo com senha correta.
-      const { data: perfil } = await supabase
+      const { data: perfil, error: erroPerfil } = await supabase
         .from('profiles')
         .select('ativo, area, role')
         .eq('id', data.user.id)
         .maybeSingle();
 
+      if (erroPerfil) {
+        await supabase.auth.signOut();
+        setErro(`Não foi possível ler seu perfil (${erroPerfil.message}).`);
+        return;
+      }
       if (!perfil) {
         await supabase.auth.signOut();
         setErro('Seu usuário ainda não tem perfil configurado. Procure o administrador.');
@@ -73,17 +78,35 @@ export function FormularioLogin({ proximo }: { proximo?: string }) {
         return;
       }
 
+      // Sem sessão persistida em cookie o servidor devolveria o login de novo.
+      // Conferir aqui evita o "clico e não acontece nada".
+      const { data: sessao } = await supabase.auth.getSession();
+      if (!sessao.session) {
+        setErro('A sessão não pôde ser salva. Verifique se o navegador aceita cookies deste site.');
+        return;
+      }
+
       await supabase
         .from('profiles')
         .update({ ultimo_acesso: new Date().toISOString() })
         .eq('id', data.user.id);
 
-      // O destino final é decidido no servidor, com base em área e função.
-      router.replace(proximo && proximo.startsWith('/') ? proximo : '/');
-      router.refresh();
-    } catch {
-      setErro('Erro inesperado ao entrar. Tente novamente.');
+      const destino =
+        proximo && proximo.startsWith('/') && !proximo.startsWith('//')
+          ? proximo
+          : rotaInicial({ ativo: perfil.ativo, area: perfil.area, role: perfil.role } as Perfil);
+
+      // Navegação completa em vez de router.replace + router.refresh.
+      // Os dois juntos competiam: o refresh recarregava /login e cancelava a
+      // troca de rota, deixando o usuário parado na tela de login sem erro.
+      // Um load real garante que o cookie recém-gravado acompanhe a requisição.
+      window.location.assign(destino);
+      return;
+    } catch (e) {
+      setErro(`Erro inesperado ao entrar (${e instanceof Error ? e.message : String(e)}).`);
     } finally {
+      // Se `window.location.assign` foi chamado, a página está sendo trocada e
+      // o spinner deve continuar; nesse caminho já retornamos antes daqui.
       setCarregando(false);
     }
   }

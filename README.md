@@ -256,6 +256,26 @@ where email = 'maria@metaplanocontabil.com.br';
 Um usuário não consegue alterar a própria função, área ou situação — o gatilho
 `protect_profile_privileges` bloqueia, mesmo por chamada direta à API.
 
+### Contas de teste
+
+| E-mail | Senha | Função / área | Cai em |
+| --- | --- | --- | --- |
+| `admin@portalmpc.local` | `PortalMPC@2026` | admin / administração | `/dashboard` |
+| `gestor.legalizacao@portalmpc.local` | `Gestor@2026` | gestor / legalização | `/legalizacao` |
+| `legalizacao@portalmpc.local` | `Legalizacao@2026` | colaborador / legalização | `/legalizacao` |
+| `fiscal@portalmpc.local` | `Fiscal@2026` | colaborador / fiscal | `/fiscal` |
+
+> Troque essas senhas antes de colocar o portal em uso real.
+
+### Se o login não passar
+
+| Sintoma | Causa provável | Correção |
+| --- | --- | --- |
+| Clica em Entrar e nada acontece | Versão anterior usava `router.replace` + `router.refresh`, que competiam entre si | Já corrigido: a navegação agora é um load completo |
+| "O servidor de autenticação recusou a consulta" | Conta criada por SQL com colunas de token em NULL | Rode a migration `0009` ou recrie com `npm run seed:usuarios` |
+| "Chave do Supabase inválida" | `NEXT_PUBLIC_SUPABASE_ANON_KEY` errada ou ausente | Confira o `.env.local` |
+| "A sessão não pôde ser salva" | Navegador bloqueando cookies de `localhost` | Libere cookies para o site |
+
 ### Redirecionamento após o login
 
 | Perfil | Destino |
