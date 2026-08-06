@@ -203,3 +203,94 @@ export interface EstatisticasFinanceiras {
   sem_honorario: number;
   por_vencimento: { dia: number; total: number }[];
 }
+
+/* -------------------------------------------------------------------------- */
+/* Permissões modulares                                                        */
+/* -------------------------------------------------------------------------- */
+
+export type GrupoPermissao = 'telas' | 'dados' | 'administracao';
+
+export interface PermissaoCatalogo {
+  chave: string;
+  rotulo: string;
+  descricao: string | null;
+  grupo: GrupoPermissao;
+  rota: string | null;
+  somente_admin: boolean;
+  ordem: number;
+}
+
+export interface UsuarioPermissao {
+  usuario_id: string;
+  chave: string;
+  concedido_por: string | null;
+  created_at: string;
+}
+
+export interface UsuarioColuna {
+  usuario_id: string;
+  tabela: string;
+  coluna: string;
+}
+
+/** Perfil somado ao que ele pode fazer — o que a aplicação consulta. */
+export interface PerfilComPermissoes extends Perfil {
+  permissoes: string[];
+  /** Vazio = pode editar todas as colunas liberadas para o time. */
+  colunasEditaveis: string[];
+}
+
+/* -------------------------------------------------------------------------- */
+/* Atribuições recorrentes                                                     */
+/* -------------------------------------------------------------------------- */
+
+export type Periodicidade =
+  | 'semanal' | 'quinzenal' | 'mensal' | 'bimestral'
+  | 'trimestral' | 'semestral' | 'anual' | 'avulsa';
+
+export interface Atribuicao {
+  id: string;
+  titulo: string;
+  descricao: string | null;
+  responsavel_id: string;
+  area: Area;
+  tabela: string;
+  colunas: string[];
+  periodicidade: Periodicidade;
+  proximo_prazo: string;
+  alerta_dias_antes: number;
+  ativa: boolean;
+  criado_por: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Atribuição já com o dono resolvido — todo mundo pode ver de quem é. */
+export type AtribuicaoComResponsavel = Atribuicao & {
+  responsavel: Pick<Perfil, 'id' | 'nome' | 'email' | 'area'> | null;
+};
+
+export type SituacaoAtribuicao = 'atrasada' | 'proxima' | 'em_dia';
+
+/** Formato devolvido por `minhas_atribuicoes()`. */
+export interface AtribuicaoDoUsuario {
+  id: string;
+  titulo: string;
+  descricao: string | null;
+  colunas: string[];
+  periodicidade: Periodicidade;
+  proximo_prazo: string;
+  alerta_dias_antes: number;
+  dias_restantes: number;
+  situacao: SituacaoAtribuicao;
+  ultima_conclusao: string | null;
+}
+
+export interface ExecucaoAtribuicao {
+  id: string;
+  atribuicao_id: string;
+  competencia: string;
+  concluida_em: string;
+  concluida_por: string | null;
+  observacao: string | null;
+}

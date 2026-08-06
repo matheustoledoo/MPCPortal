@@ -7,6 +7,7 @@ import { usePathname } from 'next/navigation';
 import {
   Building2,
   Calculator,
+  CalendarCheck,
   ChevronLeft,
   FileSpreadsheet,
   FileStack,
@@ -27,66 +28,39 @@ import {
 import { MarcaMPC } from '@/components/MarcaMPC';
 import { Selo, cn } from '@/components/ui';
 import { criarClienteNavegador } from '@/lib/supabase/client';
-import { ehAdmin, podeLerLegalizacao, rotuloArea, rotuloRole } from '@/lib/permissoes';
-import type { Perfil } from '@/types/banco';
+import { PERMISSOES, pode, rotuloArea, rotuloRole } from '@/lib/permissoes';
+import type { PerfilComPermissoes } from '@/types/banco';
 
 interface ItemMenu {
   rotulo: string;
   href: string;
   icone: typeof Home;
-  visivel: (perfil: Perfil) => boolean;
+  /** Permissão exigida — a mesma chave que o admin marca no checkbox. */
+  permissao: string;
   grupo: 'principal' | 'administracao' | 'areas' | 'conta';
   selo?: string;
 }
 
+/**
+ * O menu é derivado das permissões, não de `role`/`area`. Conceder uma
+ * permissão faz o item aparecer; revogar faz sumir — sem tocar em código.
+ */
 const ITENS: ItemMenu[] = [
-  { rotulo: 'Início', href: '/inicio', icone: Home, grupo: 'principal', visivel: (p) => !ehAdmin(p) },
-  { rotulo: 'Dashboard', href: '/dashboard', icone: LayoutDashboard, grupo: 'principal', visivel: ehAdmin },
-  {
-    rotulo: 'Planilha Legalização',
-    href: '/legalizacao',
-    icone: FileSpreadsheet,
-    grupo: 'principal',
-    visivel: podeLerLegalizacao,
-  },
-  {
-    rotulo: 'Planilha ADM',
-    href: '/administrativo',
-    icone: Receipt,
-    grupo: 'principal',
-    visivel: ehAdmin,
-    selo: 'Restrito',
-  },
-  {
-    rotulo: 'Consultas por cidade',
-    href: '/referencias',
-    icone: Link2,
-    grupo: 'principal',
-    visivel: podeLerLegalizacao,
-  },
-  {
-    rotulo: 'Importações',
-    href: '/importacoes',
-    icone: FileStack,
-    grupo: 'principal',
-    visivel: podeLerLegalizacao,
-  },
+  { rotulo: 'Início', href: '/inicio', icone: Home, grupo: 'principal', permissao: PERMISSOES.telaInicio },
+  { rotulo: 'Dashboard', href: '/dashboard', icone: LayoutDashboard, grupo: 'principal', permissao: PERMISSOES.telaDashboard },
+  { rotulo: 'Planilha Legalização', href: '/legalizacao', icone: FileSpreadsheet, grupo: 'principal', permissao: PERMISSOES.telaLegalizacao },
+  { rotulo: 'Planilha ADM', href: '/administrativo', icone: Receipt, grupo: 'principal', permissao: PERMISSOES.telaAdministrativo, selo: 'Restrito' },
+  { rotulo: 'Atribuições', href: '/atribuicoes', icone: CalendarCheck, grupo: 'principal', permissao: PERMISSOES.telaAtribuicoes },
+  { rotulo: 'Consultas por cidade', href: '/referencias', icone: Link2, grupo: 'principal', permissao: PERMISSOES.telaReferencias },
+  { rotulo: 'Importações', href: '/importacoes', icone: FileStack, grupo: 'principal', permissao: PERMISSOES.telaImportacoes },
 
-  { rotulo: 'Usuários', href: '/usuarios', icone: Users, grupo: 'administracao', visivel: ehAdmin },
-  { rotulo: 'Auditoria', href: '/auditoria', icone: ScrollText, grupo: 'administracao', visivel: ehAdmin },
-  { rotulo: 'Configurações', href: '/configuracoes', icone: Settings, grupo: 'administracao', visivel: ehAdmin },
+  { rotulo: 'Usuários', href: '/usuarios', icone: Users, grupo: 'administracao', permissao: PERMISSOES.gerenciarUsuarios },
+  { rotulo: 'Auditoria', href: '/auditoria', icone: ScrollText, grupo: 'administracao', permissao: PERMISSOES.telaAuditoria },
+  { rotulo: 'Configurações', href: '/configuracoes', icone: Settings, grupo: 'administracao', permissao: PERMISSOES.telaConfiguracoes },
 
-  { rotulo: 'Fiscal', href: '/fiscal', icone: Calculator, grupo: 'areas', visivel: (p) => ehAdmin(p) || p.area === 'fiscal' },
-  { rotulo: 'Contábil', href: '/contabil', icone: Building2, grupo: 'areas', visivel: (p) => ehAdmin(p) || p.area === 'contabil' },
-  {
-    rotulo: 'Departamento Pessoal',
-    href: '/departamento-pessoal',
-    icone: Users,
-    grupo: 'areas',
-    visivel: (p) => ehAdmin(p) || p.area === 'departamento_pessoal',
-  },
-
-  { rotulo: 'Meu perfil', href: '/perfil', icone: UserCircle, grupo: 'conta', visivel: () => true },
+  { rotulo: 'Fiscal', href: '/fiscal', icone: Calculator, grupo: 'areas', permissao: PERMISSOES.telaFiscal },
+  { rotulo: 'Contábil', href: '/contabil', icone: Building2, grupo: 'areas', permissao: PERMISSOES.telaContabil },
+  { rotulo: 'Departamento Pessoal', href: '/departamento-pessoal', icone: Users, grupo: 'areas', permissao: PERMISSOES.telaDp },
 ];
 
 const TITULOS_GRUPO: Record<ItemMenu['grupo'], string | null> = {
@@ -96,7 +70,7 @@ const TITULOS_GRUPO: Record<ItemMenu['grupo'], string | null> = {
   conta: 'Conta',
 };
 
-export function MenuLateral({ perfil }: { perfil: Perfil }) {
+export function MenuLateral({ perfil }: { perfil: PerfilComPermissoes }) {
   const [abertoMobile, setAbertoMobile] = useState(false);
   const [recolhido, setRecolhido] = useState(false);
 
@@ -160,8 +134,10 @@ export function MenuLateral({ perfil }: { perfil: Perfil }) {
         </div>
 
         <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4" aria-label="Menu principal">
-          {(['principal', 'administracao', 'areas', 'conta'] as const).map((grupo) => {
-            const itens = ITENS.filter((item) => item.grupo === grupo && item.visivel(perfil));
+          {(['principal', 'administracao', 'areas'] as const).map((grupo) => {
+            const itens = ITENS.filter(
+              (item) => item.grupo === grupo && pode(perfil, item.permissao),
+            );
             if (itens.length === 0) return null;
 
             return (
@@ -181,6 +157,29 @@ export function MenuLateral({ perfil }: { perfil: Perfil }) {
               </div>
             );
           })}
+
+          <div>
+            {!recolhido && (
+              <p className="mb-1.5 px-3 text-[11px] font-semibold uppercase tracking-wider text-texto-fraco">
+                Conta
+              </p>
+            )}
+            <ul className="space-y-0.5">
+              <li>
+                <ItemNavegacao
+                  item={{
+                    rotulo: 'Meu perfil',
+                    href: '/perfil',
+                    icone: UserCircle,
+                    grupo: 'conta',
+                    permissao: '',
+                  }}
+                  recolhido={recolhido}
+                  aoNavegar={() => setAbertoMobile(false)}
+                />
+              </li>
+            </ul>
+          </div>
         </nav>
 
         <RodapeMenu perfil={perfil} recolhido={recolhido} />
@@ -210,9 +209,7 @@ function ItemNavegacao({
       aria-current={ativo ? 'page' : undefined}
       className={cn(
         'group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-        ativo
-          ? 'bg-marca-50 text-marca-800'
-          : 'text-texto-suave hover:bg-superficie hover:text-texto',
+        ativo ? 'bg-marca-50 text-marca-800' : 'text-texto-suave hover:bg-superficie hover:text-texto',
         recolhido && 'lg:justify-center lg:px-2',
       )}
     >
@@ -231,7 +228,7 @@ function ItemNavegacao({
   );
 }
 
-function RodapeMenu({ perfil, recolhido }: { perfil: Perfil; recolhido: boolean }) {
+function RodapeMenu({ perfil, recolhido }: { perfil: PerfilComPermissoes; recolhido: boolean }) {
   const [saindo, setSaindo] = useState(false);
 
   async function sair() {

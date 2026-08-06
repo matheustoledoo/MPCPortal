@@ -43,6 +43,7 @@ export function BarraFerramentas({
   exportando,
   podeEditar,
   podeExcluir,
+  podeExportar,
   total,
 }: {
   busca: string;
@@ -61,6 +62,7 @@ export function BarraFerramentas({
   exportando: boolean;
   podeEditar: boolean;
   podeExcluir: boolean;
+  podeExportar: boolean;
   total: number;
 }) {
   const [painelColunas, setPainelColunas] = useState(false);
@@ -158,10 +160,12 @@ export function BarraFerramentas({
           <RotateCw className="h-4 w-4" />
         </Botao>
 
-        <Botao variante="secundario" onClick={aoExportar} carregando={exportando}>
-          <Download className="h-4 w-4" />
-          Exportar
-        </Botao>
+        {podeExportar && (
+          <Botao variante="secundario" onClick={aoExportar} carregando={exportando}>
+            <Download className="h-4 w-4" />
+            Exportar
+          </Botao>
+        )}
 
         {podeEditar && (
           <Botao onClick={aoNovaEmpresa}>

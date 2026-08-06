@@ -2,7 +2,7 @@ import { cookies } from 'next/headers';
 
 import { createServerClient } from '@supabase/ssr';
 
-import type { Perfil } from '@/types/banco';
+import type { Perfil, PerfilComPermissoes } from '@/types/banco';
 
 /**
  * Cliente Supabase para Server Components, Server Actions e Route Handlers.
@@ -40,7 +40,7 @@ export async function criarClienteServidor() {
  * entre `/login` e a página de destino.
  */
 export type ResultadoPerfil =
-  | { estado: 'autenticado'; perfil: Perfil }
+  | { estado: 'autenticado'; perfil: PerfilComPermissoes }
   | { estado: 'sem-sessao' }
   | { estado: 'inativo'; perfil: Perfil }
   | { estado: 'indisponivel'; detalhe: string };
@@ -98,7 +98,26 @@ export async function obterResultadoPerfil(): Promise<ResultadoPerfil> {
     if (!data) return { estado: 'sem-sessao' };
 
     const perfil = data as Perfil;
-    return perfil.ativo ? { estado: 'autenticado', perfil } : { estado: 'inativo', perfil };
+    if (!perfil.ativo) return { estado: 'inativo', perfil };
+
+    // As permissões vêm junto: é delas que a interface decide o que mostrar.
+    const [{ data: concedidas }, { data: colunas }] = await Promise.all([
+      supabase.from('usuario_permissoes').select('chave').eq('usuario_id', userId),
+      supabase
+        .from('usuario_colunas')
+        .select('coluna')
+        .eq('usuario_id', userId)
+        .eq('tabela', 'legalizacao_empresas'),
+    ]);
+
+    return {
+      estado: 'autenticado',
+      perfil: {
+        ...perfil,
+        permissoes: (concedidas ?? []).map((linha) => linha.chave as string),
+        colunasEditaveis: (colunas ?? []).map((linha) => linha.coluna as string),
+      },
+    };
   } catch (erro) {
     if (ehFalhaDeRede(erro)) {
       return { estado: 'indisponivel', detalhe: erro instanceof Error ? erro.message : String(erro) };
@@ -111,7 +130,7 @@ export async function obterResultadoPerfil(): Promise<ResultadoPerfil> {
  * Perfil do usuário autenticado, ou null.
  * Mantido para chamadas que não precisam distinguir os motivos da ausência.
  */
-export async function obterPerfilAtual(): Promise<Perfil | null> {
+export async function obterPerfilAtual(): Promise<PerfilComPermissoes | null> {
   const resultado = await obterResultadoPerfil();
   return resultado.estado === 'autenticado' ? resultado.perfil : null;
 }

@@ -1,13 +1,28 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
-import { ArrowRight, Building2, FileSpreadsheet, Link2, UserCircle } from 'lucide-react';
+import {
+  ArrowRight,
+  Building2,
+  CalendarCheck,
+  FileSpreadsheet,
+  Link2,
+  UserCircle,
+} from 'lucide-react';
 
+import { MinhasAtribuicoes } from '@/components/atribuicoes/MinhasAtribuicoes';
 import { CabecalhoPagina } from '@/components/layout/CabecalhoPagina';
 import { Cartao, Indicador, Selo } from '@/components/ui';
-import { podeLerLegalizacao, rotuloArea, rotuloRole } from '@/lib/permissoes';
+import { COLUNAS_GERAIS } from '@/lib/colunas';
+import {
+  PERMISSOES,
+  pode,
+  podeLerLegalizacao,
+  rotuloArea,
+  rotuloRole,
+} from '@/lib/permissoes';
 import { criarClienteServidor, obterPerfilAtual } from '@/lib/supabase/server';
-import type { EstatisticasLegalizacao } from '@/types/banco';
+import type { AtribuicaoDoUsuario, EstatisticasLegalizacao } from '@/types/banco';
 
 export const metadata = { title: 'Início' };
 
@@ -18,18 +33,29 @@ export default async function PaginaInicio() {
   const supabase = await criarClienteServidor();
   const podeVerBase = podeLerLegalizacao(perfil);
 
-  const { data } = podeVerBase
-    ? await supabase.rpc('legalizacao_estatisticas')
-    : { data: null };
-  const stats = data as EstatisticasLegalizacao | null;
+  const [estatisticas, atribuicoes] = await Promise.all([
+    podeVerBase ? supabase.rpc('legalizacao_estatisticas') : Promise.resolve({ data: null }),
+    // Se a migration 0011 ainda não estiver aplicada, a RPC não existe:
+    // o erro é ignorado e a seção simplesmente some, sem derrubar a página.
+    supabase.rpc('minhas_atribuicoes'),
+  ]);
 
+  const stats = estatisticas.data as EstatisticasLegalizacao | null;
+  const minhas = (atribuicoes.data ?? []) as AtribuicaoDoUsuario[];
+
+  const rotulosColunas = Object.fromEntries(COLUNAS_GERAIS.map((c) => [c.campo, c.rotulo]));
   const primeiroNome = perfil.nome.split(' ')[0];
+  const atrasadas = minhas.filter((a) => a.situacao === 'atrasada').length;
 
   return (
     <>
       <CabecalhoPagina
         titulo={`Olá, ${primeiroNome}`}
-        descricao="Seu ponto de partida no PortalMPC."
+        descricao={
+          atrasadas > 0
+            ? `Você tem ${atrasadas} responsabilidade(s) com o prazo vencido.`
+            : 'Seu ponto de partida no PortalMPC.'
+        }
         acoes={
           <div className="flex gap-2">
             <Selo tom="marca">{rotuloArea(perfil.area)}</Selo>
@@ -39,6 +65,8 @@ export default async function PaginaInicio() {
       />
 
       <div className="space-y-6 p-5 sm:p-7">
+        <MinhasAtribuicoes iniciais={minhas} rotulosColunas={rotulosColunas} />
+
         {stats && (
           <section className="grid gap-4 sm:grid-cols-3">
             <Indicador
@@ -63,20 +91,28 @@ export default async function PaginaInicio() {
 
         <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {podeVerBase && (
-            <>
-              <Atalho
-                href="/legalizacao"
-                icone={<FileSpreadsheet className="h-5 w-5" />}
-                titulo="Planilha Legalização"
-                descricao="Consultar, filtrar e editar as empresas da carteira."
-              />
-              <Atalho
-                href="/referencias"
-                icone={<Link2 className="h-5 w-5" />}
-                titulo="Consultas por cidade"
-                descricao="Portais das prefeituras e checklist de documentos."
-              />
-            </>
+            <Atalho
+              href="/legalizacao"
+              icone={<FileSpreadsheet className="h-5 w-5" />}
+              titulo="Planilha Legalização"
+              descricao="Consultar, filtrar e editar as empresas da carteira."
+            />
+          )}
+          {pode(perfil, PERMISSOES.telaReferencias) && (
+            <Atalho
+              href="/referencias"
+              icone={<Link2 className="h-5 w-5" />}
+              titulo="Consultas por cidade"
+              descricao="Portais das prefeituras e checklist de documentos."
+            />
+          )}
+          {pode(perfil, PERMISSOES.telaAtribuicoes) && (
+            <Atalho
+              href="/atribuicoes"
+              icone={<CalendarCheck className="h-5 w-5" />}
+              titulo="Atribuições"
+              descricao="Quem cuida de cada parte da base — e até quando."
+            />
           )}
           <Atalho
             href="/perfil"
@@ -91,8 +127,8 @@ export default async function PaginaInicio() {
             <h2 className="text-sm font-semibold text-texto">Sua área ainda está em construção</h2>
             <p className="mt-2 text-sm leading-relaxed text-texto-suave">
               O módulo de <strong>{rotuloArea(perfil.area)}</strong> será desenvolvido nas próximas
-              etapas do projeto. Por enquanto, seu acesso está limitado ao seu perfil — os dados de
-              Legalização não são visíveis para outras áreas.
+              etapas do projeto. Por enquanto seu acesso segue exatamente o que o administrador
+              marcou nas permissões — os dados de Legalização não aparecem sem essa liberação.
             </p>
           </Cartao>
         )}

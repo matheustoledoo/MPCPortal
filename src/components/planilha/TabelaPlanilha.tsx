@@ -9,8 +9,10 @@ import {
   ChevronLeft,
   ChevronRight,
   FileSpreadsheet,
+  Lock,
   Pencil,
   SearchX,
+  UserCheck,
 } from 'lucide-react';
 
 import { BarraFerramentas } from '@/components/planilha/BarraFerramentas';
@@ -26,6 +28,7 @@ import {
   cn,
   useAvisos,
 } from '@/components/ui';
+import type { ResponsavelDeColuna } from '@/lib/atribuicoes';
 import { colunasPara, colunasVisiveisPadrao, type DefinicaoColuna } from '@/lib/colunas';
 import {
   atualizarEmMassa,
@@ -40,18 +43,33 @@ import {
 } from '@/lib/empresas';
 import { criarClienteNavegador } from '@/lib/supabase/client';
 
-const OPCOES_POR_PAGINA = [25, 50, 100, 200];
+const OPCOES_POR_PAGINA = [25, 50, 100, 200, 500];
+
+/** Tamanho de cada requisição ao carregar a planilha inteira. */
+const LOTE_TUDO = 500;
+
+/** Teto de segurança para o modo "todas": 50 lotes = 25 mil linhas. */
+const MAX_LOTES = 50;
 
 export function TabelaPlanilha({
   podeVerAdministrativo,
   podeEditar,
   podeExcluir,
+  podeExportar = true,
+  colunasEditaveis = [],
+  responsaveisPorColuna = {},
   /** Rótulo usado no nome do arquivo exportado. */
   contexto,
 }: {
   podeVerAdministrativo: boolean;
   podeEditar: boolean;
   podeExcluir: boolean;
+  /** Baixar a base inteira em Excel tem permissão própria. */
+  podeExportar?: boolean;
+  /** Restrição pessoal de colunas. Vazio = pode editar todas as liberadas. */
+  colunasEditaveis?: string[];
+  /** Coluna → atribuições ativas. Visível para qualquer um que abra a tela. */
+  responsaveisPorColuna?: Record<string, ResponsavelDeColuna[]>;
   contexto: 'legalizacao' | 'administrativo';
 }) {
   const { avisar } = useAvisos();
@@ -65,7 +83,9 @@ export function TabelaPlanilha({
   const [erro, setErro] = useState<string | null>(null);
 
   const [pagina, setPagina] = useState(1);
-  const [porPagina, setPorPagina] = useState(50);
+  // 'todas' carrega a planilha inteira, em lotes, como pediram: a tabela
+  // cresce até o número exato de linhas da base.
+  const [porPagina, setPorPagina] = useState<number | 'todas'>(50);
   const [busca, setBusca] = useState('');
   const [buscaAplicada, setBuscaAplicada] = useState('');
   const [ordenarPor, setOrdenarPor] = useState('razao_social');
@@ -107,15 +127,37 @@ export function TabelaPlanilha({
     setCarregando(true);
     setErro(null);
     try {
-      const resultado = await buscarEmpresas(supabase, {
-        pagina,
-        porPagina,
+      const base = {
         busca: buscaAplicada,
         ordenarPor,
         ascendente,
         filtros: JSON.parse(chaveFiltros) as FiltroColuna[],
         incluirAdministrativo: podeVerAdministrativo,
-      });
+      };
+
+      if (porPagina === 'todas') {
+        // O PostgREST limita o número de linhas por resposta, então "todas"
+        // é montado em lotes até completar o total informado pelo count.
+        const acumulado: LinhaEmpresa[] = [];
+        let totalReal = 0;
+
+        for (let lote = 1; lote <= MAX_LOTES; lote++) {
+          const parcial = await buscarEmpresas(supabase, {
+            ...base,
+            pagina: lote,
+            porPagina: LOTE_TUDO,
+          });
+          acumulado.push(...parcial.linhas);
+          totalReal = parcial.total;
+          if (parcial.linhas.length === 0 || acumulado.length >= totalReal) break;
+        }
+
+        setLinhas(acumulado);
+        setTotal(totalReal);
+        return;
+      }
+
+      const resultado = await buscarEmpresas(supabase, { ...base, pagina, porPagina });
       setLinhas(resultado.linhas);
       setTotal(resultado.total);
     } catch (e) {
@@ -129,8 +171,35 @@ export function TabelaPlanilha({
     void carregar();
   }, [carregar]);
 
-  const totalPaginas = Math.max(1, Math.ceil(total / porPagina));
+  const totalPaginas = porPagina === 'todas' ? 1 : Math.max(1, Math.ceil(total / porPagina));
   const colunasExibidas = colunas.filter((c) => colunasVisiveis.includes(c.campo));
+
+  /**
+   * Editabilidade por célula.
+   *
+   * `podeEditar` diz se a pessoa mexe na base; `colunasEditaveis` restringe a
+   * quais colunas — é a "atribuição de colunas" configurada na tela de
+   * usuários. Lista vazia significa sem restrição, e o banco aplica a mesma
+   * regra (`minhas_colunas_editaveis`), então isto é conveniência, não defesa.
+   */
+  function editavelPeloUsuario(coluna: DefinicaoColuna): boolean {
+    if (!podeEditar || !coluna.editavel) return false;
+    if (coluna.confidencial) return podeVerAdministrativo;
+    if (colunasEditaveis.length === 0) return true;
+    return colunasEditaveis.includes(coluna.campo);
+  }
+
+  function motivoBloqueio(coluna: DefinicaoColuna): string | undefined {
+    if (editavelPeloUsuario(coluna)) return undefined;
+    if (!coluna.editavel) return 'Campo calculado pelo sistema — não é editável.';
+    if (!podeEditar) return 'Você tem acesso de leitura nesta base.';
+    if (colunasEditaveis.length > 0) {
+      return `Fora das suas colunas. Você edita: ${colunasEditaveis
+        .map((c) => colunas.find((d) => d.campo === c)?.rotulo ?? c)
+        .join(', ')}.`;
+    }
+    return undefined;
+  }
 
   function alternarOrdenacao(campo: string) {
     if (ordenarPor === campo) setAscendente((v) => !v);
@@ -307,6 +376,7 @@ export function TabelaPlanilha({
         exportando={exportando}
         podeEditar={podeEditar}
         podeExcluir={podeExcluir}
+        podeExportar={podeExportar}
         total={total}
       />
 
@@ -399,6 +469,8 @@ export function TabelaPlanilha({
                     ordenado={ordenarPor === coluna.campo}
                     ascendente={ascendente}
                     aoOrdenar={() => alternarOrdenacao(coluna.campo)}
+                    responsaveis={responsaveisPorColuna[coluna.campo] ?? []}
+                    somenteLeitura={podeEditar && coluna.editavel && !editavelPeloUsuario(coluna)}
                     deslocamentoFixo={coluna.fixa ? 44 + somaLarguras(colunasExibidas, larguras, indice) : undefined}
                   />
                 ))}
@@ -456,7 +528,8 @@ export function TabelaPlanilha({
                         <CelulaEditavel
                           coluna={coluna}
                           valor={valorDaLinha(linha, coluna)}
-                          editavel={podeEditar}
+                          editavel={editavelPeloUsuario(coluna)}
+                          dicaBloqueio={motivoBloqueio(coluna)}
                           aoSalvar={async (novo) => {
                             try {
                               await salvarCelula(linha, coluna, novo);
@@ -494,11 +567,12 @@ export function TabelaPlanilha({
       <div className="sem-impressao flex flex-wrap items-center justify-between gap-3 border-t border-borda bg-superficie-elevada px-5 py-3 text-sm sm:px-7">
         <div className="flex items-center gap-2">
           <span className="text-texto-suave">Linhas por página</span>
-          <div className="w-20">
+          <div className="w-28">
             <Selecao
               value={String(porPagina)}
               onChange={(e) => {
-                setPorPagina(Number(e.target.value));
+                const escolha = e.target.value;
+                setPorPagina(escolha === 'todas' ? 'todas' : Number(escolha));
                 setPagina(1);
               }}
               aria-label="Linhas por página"
@@ -509,38 +583,52 @@ export function TabelaPlanilha({
                   {n}
                 </option>
               ))}
+              <option value="todas">Todas</option>
             </Selecao>
           </div>
+          {porPagina === 'todas' && (
+            <span className="text-xs text-texto-fraco">
+              A planilha inteira em uma só rolagem.
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-3">
-          <span className="tabular-nums text-texto-suave">
-            {total === 0 ? 0 : (pagina - 1) * porPagina + 1}–{Math.min(pagina * porPagina, total)} de{' '}
-            {total.toLocaleString('pt-BR')}
-          </span>
-          <div className="flex gap-1">
-            <Botao
-              variante="secundario"
-              tamanho="icone"
-              onClick={() => setPagina((p) => Math.max(1, p - 1))}
-              disabled={pagina <= 1 || carregando}
-              aria-label="Página anterior"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Botao>
-            <span className="flex h-9 items-center px-2 text-xs tabular-nums text-texto-suave">
-              {pagina} / {totalPaginas}
+          {porPagina === 'todas' ? (
+            <span className="tabular-nums text-texto-suave">
+              {linhas.length.toLocaleString('pt-BR')} de {total.toLocaleString('pt-BR')} linhas
             </span>
-            <Botao
-              variante="secundario"
-              tamanho="icone"
-              onClick={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
-              disabled={pagina >= totalPaginas || carregando}
-              aria-label="Próxima página"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Botao>
-          </div>
+          ) : (
+            <>
+              <span className="tabular-nums text-texto-suave">
+                {total === 0 ? 0 : (pagina - 1) * porPagina + 1}–
+                {Math.min(pagina * porPagina, total)} de {total.toLocaleString('pt-BR')}
+              </span>
+              <div className="flex gap-1">
+                <Botao
+                  variante="secundario"
+                  tamanho="icone"
+                  onClick={() => setPagina((p) => Math.max(1, p - 1))}
+                  disabled={pagina <= 1 || carregando}
+                  aria-label="Página anterior"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Botao>
+                <span className="flex h-9 items-center px-2 text-xs tabular-nums text-texto-suave">
+                  {pagina} / {totalPaginas}
+                </span>
+                <Botao
+                  variante="secundario"
+                  tamanho="icone"
+                  onClick={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
+                  disabled={pagina >= totalPaginas || carregando}
+                  aria-label="Próxima página"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Botao>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -549,6 +637,7 @@ export function TabelaPlanilha({
         empresa={empresaNoPainel}
         podeVerAdministrativo={podeVerAdministrativo}
         podeEditar={podeEditar}
+        colunasEditaveis={colunasEditaveis}
         aoFechar={() => {
           setPainelAberto(false);
           setEmpresaNoPainel(null);
@@ -599,6 +688,8 @@ function CabecalhoColuna({
   ordenado,
   ascendente,
   aoOrdenar,
+  responsaveis,
+  somenteLeitura,
   deslocamentoFixo,
 }: {
   coluna: DefinicaoColuna;
@@ -607,6 +698,8 @@ function CabecalhoColuna({
   ordenado: boolean;
   ascendente: boolean;
   aoOrdenar: () => void;
+  responsaveis: ResponsavelDeColuna[];
+  somenteLeitura: boolean;
   deslocamentoFixo?: number;
 }) {
   const arrastando = useRef<{ inicioX: number; larguraInicial: number } | null>(null);
@@ -632,6 +725,16 @@ function CabecalhoColuna({
 
   const Icone = ordenado ? (ascendente ? ArrowUp : ArrowDown) : ArrowUpDown;
 
+  // Quem cuida desta coluna é informação aberta: qualquer pessoa do time
+  // precisa saber a quem recorrer, mesmo sem poder editar.
+  const dicaResponsaveis = responsaveis
+    .map(
+      (r) =>
+        `${r.responsavel}${r.souEu ? ' (você)' : ''} — ${r.titulo} · ${r.periodicidade}, ` +
+        `próximo prazo ${r.proximo_prazo}`,
+    )
+    .join('\n');
+
   return (
     <th
       scope="col"
@@ -656,6 +759,29 @@ function CabecalhoColuna({
             )}
           />
         </button>
+
+        {responsaveis.length > 0 && (
+          <span
+            className={cn(
+              'shrink-0 cursor-help',
+              responsaveis.some((r) => r.souEu) ? 'text-marca-600' : 'text-texto-fraco',
+            )}
+            title={`Responsável por esta coluna:\n${dicaResponsaveis}`}
+            aria-label={`Responsável: ${responsaveis.map((r) => r.responsavel).join(', ')}`}
+          >
+            <UserCheck className="h-3.5 w-3.5" />
+          </span>
+        )}
+
+        {somenteLeitura && (
+          <span
+            className="shrink-0 text-texto-fraco"
+            title="Fora das suas colunas — esta fica só para leitura."
+          >
+            <Lock className="h-3 w-3" />
+          </span>
+        )}
+
         {coluna.confidencial && (
           <span
             className="shrink-0 rounded bg-alerta-suave px-1 text-[9px] font-bold text-alerta"

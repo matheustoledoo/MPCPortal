@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 
 import { AreaEmConstrucao } from '@/components/layout/AreaEmConstrucao';
-import { ehAdmin } from '@/lib/permissoes';
+import { PERMISSOES, pode } from '@/lib/permissoes';
 import { obterPerfilAtual } from '@/lib/supabase/server';
 
 export const metadata = { title: 'Fiscal' };
@@ -9,7 +9,7 @@ export const metadata = { title: 'Fiscal' };
 export default async function PaginaFiscal() {
   const perfil = await obterPerfilAtual();
   if (!perfil) redirect('/login');
-  if (!ehAdmin(perfil) && perfil.area !== 'fiscal') redirect('/sem-acesso');
+  if (!pode(perfil, PERMISSOES.telaFiscal)) redirect('/sem-acesso');
 
   return (
     <AreaEmConstrucao

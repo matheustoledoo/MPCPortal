@@ -11,13 +11,46 @@ o que o PostgreSQL já decidiu. Esconder um botão não é segurança.
 | --- | --- | --- |
 | 1. Middleware | `src/middleware.ts` | Navegar no portal sem sessão |
 | 2. Layout do portal | `src/app/(portal)/layout.tsx` | Entrar com perfil inexistente ou inativo |
-| 3. Guarda de página | cada `page.tsx` | Abrir `/administrativo`, `/usuarios`, `/auditoria` sem ser admin |
+| 3. Guarda de página | cada `page.tsx` | Abrir uma tela sem a permissão exigida |
 | 4. Rota de exportação | `src/app/api/exportar/route.ts` | Pedir colunas confidenciais no corpo da requisição |
-| 5. **RLS no PostgreSQL** | `supabase/migrations/0006_rls_politicas.sql` | **Tudo o mais** — inclusive acesso direto à API |
+| 5. Rota de criação de usuário | `src/app/api/admin/usuarios/route.ts` | Criar admin sem ser admin; conceder permissão confidencial |
+| 6. **RLS no PostgreSQL** | `supabase/migrations/0006`, `0010`, `0011` | **Tudo o mais** — inclusive acesso direto à API |
+| 7. Gatilhos | `0010` e `0012` | Conceder permissão de admin a quem não é; alterar coluna fora da atribuição |
 
-As camadas 1 a 4 existem para dar boa experiência (redirecionar, avisar). A camada 5 é a
-que vale: se todas as outras falhassem, o banco continuaria devolvendo zero linhas
-confidenciais.
+As camadas 1 a 5 existem para dar boa experiência (redirecionar, avisar). As camadas 6 e 7
+são as que valem: se todas as outras falhassem, o banco continuaria devolvendo zero linhas
+confidenciais e recusando as gravações indevidas.
+
+### Permissões modulares (migration 0010)
+
+O acesso deixou de vir da função (`role`) e passa a vir de permissões concedidas por
+usuário, marcadas em checkbox pelo administrador. `admin` continua tendo tudo.
+
+Três permissões de tela e duas de dados são **exclusivas de admin**:
+`tela.administrativo`, `tela.auditoria`, `tela.configuracoes`,
+`dados.administrativo.editar` e `dados.administrativo.exportar`.
+
+Nenhum caminho concede essas chaves a outra função:
+
+| Tentativa | O que acontece |
+| --- | --- |
+| Marcar o checkbox na tela | O item vem desabilitado para quem não é admin; não aparece no formulário de criação |
+| `POST /api/admin/usuarios` com a chave no corpo | A rota filtra a chave antes de gravar (`PERMISSOES_SOMENTE_ADMIN`) |
+| `INSERT` direto em `usuario_permissoes` pela API | Gatilho `proteger_permissoes_de_admin` levanta `42501` |
+| Linha gravada por engano no banco | `pode()` no frontend recusa a chave mesmo estando na lista do usuário |
+| Rebaixar um admin para gestor | Gatilho `limpar_permissoes_ao_rebaixar` apaga as chaves confidenciais |
+| Promover-se a admin com `admin.usuarios.gerenciar` | `protect_profile_privileges` levanta `42501` — só admin promove admin |
+
+E, mesmo que uma dessas barreiras caísse, `legalizacao_dados_administrativos` continua com
+`FORCE ROW LEVEL SECURITY` e política exclusiva de `is_admin()`: a tela abriria vazia.
+
+### Restrição por coluna (migration 0012)
+
+RLS decide **linha**, não coluna. Para que "fulano só edita a coluna Alvará" fosse regra de
+banco e não só de tela, o gatilho `aplicar_colunas_permitidas` compara `old` e `new` a cada
+`UPDATE` em `legalizacao_empresas` e levanta `42501` citando exatamente quais colunas foram
+recusadas. Lista de colunas vazia = sem restrição, para que o time inteiro siga podendo
+editar a planilha.
 
 ---
 
@@ -197,6 +230,12 @@ configurado no projeto — sem ele, a função recusa toda requisição.
 | **Senhas dos usuários de teste** | Senhas iniciais conhecidas | Trocar no primeiro acesso ou remover as contas `@portalmpc.local` antes de produção |
 | Helpers `SECURITY DEFINER` expostos a `authenticated` | Por design | Cada um devolve apenas o status do próprio chamador; `authenticated` precisa de `EXECUTE` para a RLS funcionar. Nenhuma função é executável por `anon`. |
 | MFA para administradores | Não configurado | Avaliar TOTP no Supabase Auth quando o portal for para produção |
+| **`service_role` exposta em conversa** | A chave foi colada em texto durante o desenvolvimento | **Rotacionar** em Supabase → Project Settings → API e atualizar o `.env.local` |
+| Migrations `0010`, `0011` e `0012` | Escritas, **ainda não aplicadas** | Rodar `npm run migrations:juntar` e executar o arquivo gerado no SQL Editor |
 
 O linter de segurança do Supabase não aponta nenhuma tabela sem RLS nem nenhuma função
 executável por `anon`.
+
+> As evidências da seção 3 foram colhidas com as migrations `0001`–`0009` aplicadas. As
+> políticas de `0010`–`0012` estão escritas e revisadas, mas os testes de impersonação
+> equivalentes só podem ser refeitos depois que elas forem executadas no banco.

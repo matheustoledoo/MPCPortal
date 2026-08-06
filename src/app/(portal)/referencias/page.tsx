@@ -4,7 +4,7 @@ import { ExternalLink, FileCheck2, ListChecks } from 'lucide-react';
 
 import { CabecalhoPagina } from '@/components/layout/CabecalhoPagina';
 import { CabecalhoCartao, Cartao, Selo } from '@/components/ui';
-import { podeLerLegalizacao } from '@/lib/permissoes';
+import { PERMISSOES, pode } from '@/lib/permissoes';
 import { criarClienteServidor, obterPerfilAtual } from '@/lib/supabase/server';
 import type { CidadeLink, DocumentoNecessario, ItemChecklist } from '@/types/banco';
 
@@ -18,7 +18,7 @@ export const metadata = { title: 'Consultas por cidade' };
 export default async function PaginaReferencias() {
   const perfil = await obterPerfilAtual();
   if (!perfil) redirect('/login');
-  if (!podeLerLegalizacao(perfil)) redirect('/sem-acesso');
+  if (!pode(perfil, PERMISSOES.telaReferencias)) redirect('/sem-acesso');
 
   const supabase = await criarClienteServidor();
 

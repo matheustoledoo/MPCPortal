@@ -14,7 +14,7 @@ import {
 
 import { CabecalhoPagina } from '@/components/layout/CabecalhoPagina';
 import { Cartao, CabecalhoCartao, Indicador, Selo } from '@/components/ui';
-import { ehAdmin } from '@/lib/permissoes';
+import { PERMISSOES, ehAdmin, pode } from '@/lib/permissoes';
 import { formatarMoeda } from '@/lib/normalizacao';
 import { criarClienteServidor, obterPerfilAtual } from '@/lib/supabase/server';
 import type { EstatisticasFinanceiras, EstatisticasLegalizacao } from '@/types/banco';
@@ -24,7 +24,7 @@ export const metadata = { title: 'Dashboard' };
 export default async function PaginaDashboard() {
   const perfil = await obterPerfilAtual();
   if (!perfil) redirect('/login');
-  if (!ehAdmin(perfil) && perfil.area !== 'administracao') redirect('/sem-acesso');
+  if (!pode(perfil, PERMISSOES.telaDashboard)) redirect('/sem-acesso');
 
   const supabase = await criarClienteServidor();
 
