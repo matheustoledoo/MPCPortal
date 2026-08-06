@@ -60,21 +60,21 @@ Preencha `.env.local`:
 > exige essa chave. Ela nunca é importada por nenhum componente de cliente e não aparece
 > no bundle do navegador.
 
-### 4. Aplicar as migrations
+### 4. Migrations
 
-As migrations `0001` a `0009` já estão aplicadas no projeto. As três seguintes —
-permissões modulares, atribuições e restrição de coluna — precisam ser executadas:
+As migrations `0001` a `0014` **já estão aplicadas** no projeto `PortalMPC`. Nada a fazer
+para rodar contra este banco.
+
+Para um banco novo, ou para conferir o que existe:
 
 ```bash
-npm run migrations:juntar     # gera supabase/APLICAR_NO_SQL_EDITOR.sql (0010 em diante)
+npm run migrations:juntar -- 0001   # gera supabase/APLICAR_NO_SQL_EDITOR.sql com tudo
 ```
 
-Abra **Supabase → SQL Editor**, cole o arquivo inteiro e execute. O script é idempotente
+Abra **Supabase → SQL Editor**, cole o arquivo e execute. O script é idempotente
 (`create or replace`, `if not exists`, `drop policy if exists`), então rodar duas vezes não
-quebra nada. Ao final, os usuários existentes recebem automaticamente as permissões
-equivalentes ao que já podiam fazer — ninguém ganha nem perde acesso na virada.
-
-Para regerar desde o começo (banco novo): `npm run migrations:juntar -- 0001`.
+quebra nada. A migration `0010` semeia as permissões dos usuários já existentes espelhando o
+que eles podiam fazer antes — ninguém ganha nem perde acesso na virada.
 
 ### 5. Rodar
 
@@ -147,7 +147,7 @@ scripts/
 └── seed-usuarios.ts              # criação de usuários
 
 supabase/
-├── migrations/                   # 0001 … 0012
+├── migrations/                   # 0001 … 0014 (todas aplicadas)
 ├── APLICAR_NO_SQL_EDITOR.sql     # gerado por `npm run migrations:juntar`
 └── functions/importar-legalizacao/   # Edge Function usada na carga inicial
 ```
@@ -338,12 +338,15 @@ Um usuário não consegue alterar a própria função, área ou situação — o
 
 ### Contas de teste
 
-| E-mail | Senha | Função / área | Cai em |
-| --- | --- | --- | --- |
-| `admin@portalmpc.local` | `PortalMPC@2026` | admin / administração | `/dashboard` |
-| `gestor.legalizacao@portalmpc.local` | `Gestor@2026` | gestor / legalização | `/legalizacao` |
-| `legalizacao@portalmpc.local` | `Legalizacao@2026` | colaborador / legalização | `/legalizacao` |
-| `fiscal@portalmpc.local` | `Fiscal@2026` | colaborador / fiscal | `/fiscal` |
+| E-mail | Senha | Função / time | Permissões | Cai em |
+| --- | --- | --- | --: | --- |
+| `admin@portalmpc.local` | `PortalMPC@2026` | admin / administração | todas (21) | `/dashboard` |
+| `gestor.legalizacao@portalmpc.local` | `Gestor@2026` | gestor / legalização | 10 | `/legalizacao` |
+| `legalizacao@portalmpc.local` | `Legalizacao@2026` | colaborador / legalização | 8 | `/legalizacao` |
+| `fiscal@portalmpc.local` | `Fiscal@2026` | colaborador / fiscal | 2 | `/fiscal` |
+
+As permissões foram semeadas pela migration `0010` espelhando o acesso que cada um já tinha.
+Ajuste tudo pela tela **Usuários**.
 
 > Troque essas senhas antes de colocar o portal em uso real.
 
