@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import Link from 'next/link';
 import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
   FileSpreadsheet,
   Lock,
   Pencil,
@@ -25,6 +27,7 @@ import {
   EstadoVazio,
   ModalConfirmacao,
   Selecao,
+  Selo,
   cn,
   useAvisos,
 } from '@/components/ui';
@@ -56,6 +59,7 @@ export function TabelaPlanilha({
   podeEditar,
   podeExcluir,
   podeExportar = true,
+  buscaInicial = '',
   colunasEditaveis = [],
   responsaveisPorColuna = {},
   /** Rótulo usado no nome do arquivo exportado. */
@@ -66,6 +70,8 @@ export function TabelaPlanilha({
   podeExcluir: boolean;
   /** Baixar a base inteira em Excel tem permissão própria. */
   podeExportar?: boolean;
+  /** Termo já aplicado ao abrir — usado por quem chega vindo de outra tela. */
+  buscaInicial?: string;
   /** Restrição pessoal de colunas. Vazio = pode editar todas as liberadas. */
   colunasEditaveis?: string[];
   /** Coluna → atribuições ativas. Visível para qualquer um que abra a tela. */
@@ -86,8 +92,8 @@ export function TabelaPlanilha({
   // 'todas' carrega a planilha inteira, em lotes, como pediram: a tabela
   // cresce até o número exato de linhas da base.
   const [porPagina, setPorPagina] = useState<number | 'todas'>(50);
-  const [busca, setBusca] = useState('');
-  const [buscaAplicada, setBuscaAplicada] = useState('');
+  const [busca, setBusca] = useState(buscaInicial);
+  const [buscaAplicada, setBuscaAplicada] = useState(buscaInicial);
   const [ordenarPor, setOrdenarPor] = useState('razao_social');
   const [ascendente, setAscendente] = useState(true);
   const [filtros, setFiltros] = useState<FiltroColuna[]>([]);
@@ -525,6 +531,9 @@ export function TabelaPlanilha({
                             : undefined
                         }
                       >
+                        {coluna.tipo === 'processos' ? (
+                          <AvisoProcessos linha={linha} />
+                        ) : (
                         <CelulaEditavel
                           coluna={coluna}
                           valor={valorDaLinha(linha, coluna)}
@@ -539,6 +548,7 @@ export function TabelaPlanilha({
                             }
                           }}
                         />
+                        )}
                       </td>
                     ))}
 
@@ -666,6 +676,58 @@ export function TabelaPlanilha({
         }
       />
     </div>
+  );
+}
+
+/**
+ * Aviso de que a empresa tem processo no Controle Geral.
+ *
+ * Era o pedido de "quando colocar algo naquela planilha, avisar aqui". O
+ * número vem do gatilho; o atraso é derivado do prazo mais próximo, para
+ * que a marcação não envelheça sozinha à meia-noite.
+ */
+function AvisoProcessos({ linha }: { linha: LinhaEmpresa }) {
+  const abertos = linha.processos_abertos ?? 0;
+
+  if (abertos === 0) {
+    return <span className="px-1 text-texto-fraco">—</span>;
+  }
+
+  const prazo = linha.processo_proximo_prazo;
+  let tom: 'marca' | 'alerta' | 'erro' = 'marca';
+  let detalhe = 'em andamento';
+
+  if (prazo) {
+    const [ano, mes, dia] = prazo.slice(0, 10).split('-').map(Number);
+    const alvo = new Date(ano, (mes ?? 1) - 1, dia ?? 1);
+    const hoje = new Date();
+    const dias = Math.round(
+      (alvo.getTime() - new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()).getTime()) /
+        86_400_000,
+    );
+    if (dias < 0) {
+      tom = 'erro';
+      detalhe = `${Math.abs(dias)}d em atraso`;
+    } else if (dias <= 3) {
+      tom = 'alerta';
+      detalhe = dias === 0 ? 'vence hoje' : `vence em ${dias}d`;
+    } else {
+      detalhe = `próximo em ${dias}d`;
+    }
+  }
+
+  return (
+    <Link
+      href={`/controle-geral?empresa=${linha.id}`}
+      title={`${abertos} processo(s) no Controle Geral — ${detalhe}. Clique para abrir.`}
+      className="inline-flex items-center gap-1.5"
+    >
+      <Selo tom={tom}>
+        <ClipboardList className="h-3 w-3" />
+        {abertos}
+      </Selo>
+      <span className="truncate text-[10px] text-texto-fraco">{detalhe}</span>
+    </Link>
   );
 }
 

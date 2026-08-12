@@ -19,11 +19,16 @@ import { criarClienteServidor, obterPerfilAtual } from '@/lib/supabase/server';
 
 export const metadata = { title: 'Planilha Legalização' };
 
-export default async function PaginaLegalizacao() {
+export default async function PaginaLegalizacao({
+  searchParams,
+}: {
+  searchParams: Promise<{ busca?: string }>;
+}) {
   const perfil = await obterPerfilAtual();
   if (!perfil) redirect('/login');
   if (!podeLerLegalizacao(perfil)) redirect('/sem-acesso');
 
+  const { busca } = await searchParams;
   const supabase = await criarClienteServidor();
   const responsaveis = await responsaveisPorColuna(supabase, perfil.id, rotuloPeriodicidade);
 
@@ -57,6 +62,7 @@ export default async function PaginaLegalizacao() {
         podeEditar={podeEditarLegalizacao(perfil)}
         podeExcluir={podeExcluirLegalizacao(perfil)}
         podeExportar={pode(perfil, PERMISSOES.exportarLegalizacao)}
+        buscaInicial={busca ?? ''}
         colunasEditaveis={minhasColunas}
         responsaveisPorColuna={responsaveis}
         contexto="legalizacao"

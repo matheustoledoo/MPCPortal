@@ -9,6 +9,10 @@ O administrador cria os usuários pela própria interface, define o time de cada
 em checkbox quais telas ele abre e o que pode alterar, e distribui responsabilidades
 recorrentes com prazo e aviso ("fulano atualiza a coluna Alvará todo mês").
 
+O time de Legalização trabalha em duas planilhas ligadas entre si: a **base de clientes** e o
+**Controle Geral**, que acompanha cada processo aberto num órgão com protocolo, prazo e
+responsável — e avisa na base quando uma empresa tem processo em andamento.
+
 A arquitetura já está preparada para os módulos Fiscal, Contábil e Departamento Pessoal.
 
 ---
@@ -20,6 +24,7 @@ A arquitetura já está preparada para os módulos Fiscal, Contábil e Departame
 - [Estrutura do projeto](#estrutura-do-projeto)
 - [Banco de dados](#banco-de-dados)
 - [Segurança e permissões](#segurança-e-permissões)
+- [Controle Geral](#controle-geral-a-aba-controle_geral-no-portal)
 - [Atribuições](#atribuições-quem-faz-o-quê-e-até-quando)
 - [Importação das planilhas](#importação-das-planilhas)
 - [Usuários e acessos](#usuários-e-acessos)
@@ -62,7 +67,7 @@ Preencha `.env.local`:
 
 ### 4. Migrations
 
-As migrations `0001` a `0014` **já estão aplicadas** no projeto `PortalMPC`. Nada a fazer
+As migrations `0001` a `0015` **já estão aplicadas** no projeto `PortalMPC`. Nada a fazer
 para rodar contra este banco.
 
 Para um banco novo, ou para conferir o que existe:
@@ -112,6 +117,7 @@ src/
 │   │   ├── inicio/               # painel dos demais perfis
 │   │   ├── legalizacao/          # Planilha Legalização (campos gerais)
 │   │   ├── administrativo/       # Planilha ADM (inclui bloco confidencial)
+│   │   ├── controle-geral/       # CONTROLE_GERAL: processos nos órgãos, com painéis
 │   │   ├── usuarios/             # criação de usuários, times e checkboxes de permissão
 │   │   ├── atribuicoes/          # quem cuida do quê, com que frequência e até quando
 │   │   ├── auditoria/            # trilha de alterações
@@ -121,6 +127,7 @@ src/
 │   │   ├── configuracoes/
 │   │   └── fiscal|contabil|departamento-pessoal/   # módulos futuros
 │   ├── api/admin/usuarios/       # criação de conta e reset de senha (service_role)
+│   ├── api/exportar-processos/   # .xlsx no mesmo layout do CONTROLE_GERAL
 │   ├── api/exportar/             # exportação Excel com permissão no servidor
 │   ├── login/ recuperar-senha/ redefinir-senha/ auth/callback/
 │   └── sem-acesso/
@@ -128,11 +135,13 @@ src/
 │   ├── ui/                       # design system (botão, campo, selo, modal, avisos)
 │   ├── layout/                   # menu lateral, cabeçalho, área em construção
 │   ├── atribuicoes/              # bloco "minhas responsabilidades" da tela de início
+│   ├── processos/                # autocomplete de empresa e painéis do Controle Geral
 │   └── planilha/                 # tabela, célula editável, filtros, painel lateral
 ├── lib/
 │   ├── supabase/                 # clientes de navegador e servidor
 │   ├── permissoes.ts             # ponto único de decisão de permissão no frontend
 │   ├── atribuicoes.ts            # cálculo de prazo e mapa coluna → responsável
+│   ├── processos.ts              # colunas, filtros e regra de prazo do Controle Geral
 │   ├── colunas.ts                # catálogo de colunas (dirige tabela, form e export)
 │   ├── empresas.ts               # acesso a dados da base de Legalização
 │   ├── normalizacao.ts           # normalizadores compartilhados com o ETL
@@ -147,7 +156,7 @@ scripts/
 └── seed-usuarios.ts              # criação de usuários
 
 supabase/
-├── migrations/                   # 0001 … 0014 (todas aplicadas)
+├── migrations/                   # 0001 … 0015 (todas aplicadas)
 ├── APLICAR_NO_SQL_EDITOR.sql     # gerado por `npm run migrations:juntar`
 └── functions/importar-legalizacao/   # Edge Function usada na carga inicial
 ```
@@ -173,6 +182,7 @@ supabase/
 | `atribuicoes` | Responsabilidades recorrentes: quem cuida do quê, com que frequência |
 | `atribuicao_execucoes` | Histórico de ciclos concluídos |
 | `legalizacao_empresas` | Base geral consolidada — 373 empresas |
+| `legalizacao_processos` | **Controle Geral**: processos em andamento nos órgãos |
 | `legalizacao_dados_administrativos` | **Confidencial**: honorários, vencimento, condições contratuais |
 | `audit_logs` | Trilha de criação, edição, exclusão, importação e exportação |
 | `import_logs` | Uma linha por execução do ETL, com o relatório completo |
@@ -208,9 +218,10 @@ marca por usuário. `admin` continua tendo tudo, sempre.
 
 | Grupo | Chaves |
 | --- | --- |
-| Telas | `tela.inicio`, `tela.legalizacao`, `tela.referencias`, `tela.importacoes`, `tela.atribuicoes`, `tela.fiscal`, `tela.contabil`, `tela.dp`, `tela.dashboard` |
+| Telas | `tela.inicio`, `tela.legalizacao`, `tela.processos`, `tela.referencias`, `tela.importacoes`, `tela.atribuicoes`, `tela.fiscal`, `tela.contabil`, `tela.dp`, `tela.dashboard` |
 | Telas **exclusivas de admin** | `tela.administrativo`, `tela.auditoria`, `tela.configuracoes` |
 | Dados | `dados.legalizacao.criar`, `.editar`, `.excluir`, `.exportar` |
+| Dados (Controle Geral) | `dados.processos.criar`, `.editar`, `.excluir`, `dados.opcoes.gerenciar` |
 | Dados **exclusivos de admin** | `dados.administrativo.editar`, `dados.administrativo.exportar` |
 | Administração | `admin.usuarios.gerenciar`, `admin.usuarios.permissoes`, `admin.atribuicoes.gerenciar` |
 
@@ -237,6 +248,41 @@ Camadas de proteção, da mais externa para a mais interna:
    atribuídas ao usuário, já que RLS não distingue coluna.
 
 Ver [`docs/SEGURANCA.md`](docs/SEGURANCA.md) para as evidências dos testes executados.
+
+### Controle Geral (a aba CONTROLE_GERAL, no portal)
+
+Segunda planilha da Legalização: o acompanhamento de cada processo aberto num órgão —
+abertura, alvará, vigilância, baixa — com protocolo, prazo e responsável. As 13 colunas, a
+ordem e as listas vieram do arquivo original.
+
+**Ligada à base de clientes.** Ao lançar um processo, digitar o nome, o CNPJ ou o código do
+cliente abre o autocomplete; escolher preenche razão social e CNPJ e cria o vínculo. Se
+alguém digitar só o CNPJ, o gatilho acha a empresa sozinho e corrige o nome pelo cadastro —
+assim a mesma empresa não aparece escrita de dez formas diferentes.
+
+**Avisa a planilha principal.** A base geral ganhou a coluna *Processos*: um selo com quantos
+processos aquela empresa tem em aberto, vermelho se algum venceu, âmbar se vence em até três
+dias. Clicar abre o Controle Geral já filtrado; do processo, a seta volta para o cadastro. No
+menu lateral, o número de atrasados aparece em vermelho ao lado do item.
+
+**Alerta de prazo automático.** As duas regras de formatação condicional do Excel viraram
+`processo_situacao()`: vencido e não encerrado destaca a linha em vermelho; vencendo em até
+três dias, em âmbar. Nada disso é digitado.
+
+**Toda lista aceita valor de fora.** Status, tipo de serviço, órgão, próxima ação e indicador
+têm listas — as originais, mais opções que faltavam (Habite-se não estava lá; CETESB, CRM,
+AMLURB e Sefaz também não). Em qualquer uma dá para digitar um valor novo: ele vale para
+aquele registro, e quem tem `dados.opcoes.gerenciar` pode guardá-lo na lista do time pelo
+próprio menu.
+
+**Painéis embutidos.** As abas DASHBOARD, DASHBOARD_ORGAO e DASHBOARD_EXECUTIVO viraram um
+painel só, com números clicáveis que filtram a tabela — e um por responsável, que o arquivo
+não tinha. Escolher o tipo de serviço sugere o órgão e um prazo típico, sem sobrescrever o
+que já estiver preenchido.
+
+**Exportação fiel.** O botão Exportar gera um .xlsx com a aba CONTROLE_GERAL nas mesmas
+colunas, com o mesmo vermelho e o mesmo âmbar, mais as abas de painel — para quem precisar
+mandar o arquivo para fora do portal.
 
 ### Atribuições (quem faz o quê, e até quando)
 

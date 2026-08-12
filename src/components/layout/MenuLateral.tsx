@@ -9,6 +9,7 @@ import {
   Calculator,
   CalendarCheck,
   ChevronLeft,
+  ClipboardList,
   FileSpreadsheet,
   FileStack,
   Home,
@@ -49,6 +50,7 @@ const ITENS: ItemMenu[] = [
   { rotulo: 'Início', href: '/inicio', icone: Home, grupo: 'principal', permissao: PERMISSOES.telaInicio },
   { rotulo: 'Dashboard', href: '/dashboard', icone: LayoutDashboard, grupo: 'principal', permissao: PERMISSOES.telaDashboard },
   { rotulo: 'Planilha Legalização', href: '/legalizacao', icone: FileSpreadsheet, grupo: 'principal', permissao: PERMISSOES.telaLegalizacao },
+  { rotulo: 'Controle Geral', href: '/controle-geral', icone: ClipboardList, grupo: 'principal', permissao: PERMISSOES.telaProcessos },
   { rotulo: 'Planilha ADM', href: '/administrativo', icone: Receipt, grupo: 'principal', permissao: PERMISSOES.telaAdministrativo, selo: 'Restrito' },
   { rotulo: 'Atribuições', href: '/atribuicoes', icone: CalendarCheck, grupo: 'principal', permissao: PERMISSOES.telaAtribuicoes },
   { rotulo: 'Consultas por cidade', href: '/referencias', icone: Link2, grupo: 'principal', permissao: PERMISSOES.telaReferencias },
@@ -70,7 +72,14 @@ const TITULOS_GRUPO: Record<ItemMenu['grupo'], string | null> = {
   conta: 'Conta',
 };
 
-export function MenuLateral({ perfil }: { perfil: PerfilComPermissoes }) {
+export function MenuLateral({
+  perfil,
+  avisos = {},
+}: {
+  perfil: PerfilComPermissoes;
+  /** Contagem por rota, ex.: `{ '/controle-geral': 3 }` para processos atrasados. */
+  avisos?: Record<string, number>;
+}) {
   const [abertoMobile, setAbertoMobile] = useState(false);
   const [recolhido, setRecolhido] = useState(false);
 
@@ -150,7 +159,12 @@ export function MenuLateral({ perfil }: { perfil: PerfilComPermissoes }) {
                 <ul className="space-y-0.5">
                   {itens.map((item) => (
                     <li key={item.href}>
-                      <ItemNavegacao item={item} recolhido={recolhido} aoNavegar={() => setAbertoMobile(false)} />
+                      <ItemNavegacao
+                        item={item}
+                        recolhido={recolhido}
+                        aviso={avisos[item.href] ?? 0}
+                        aoNavegar={() => setAbertoMobile(false)}
+                      />
                     </li>
                   ))}
                 </ul>
@@ -191,10 +205,13 @@ export function MenuLateral({ perfil }: { perfil: PerfilComPermissoes }) {
 function ItemNavegacao({
   item,
   recolhido,
+  aviso = 0,
   aoNavegar,
 }: {
   item: ItemMenu;
   recolhido: boolean;
+  /** Pendência que merece atenção — hoje, processos com prazo vencido. */
+  aviso?: number;
   aoNavegar: () => void;
 }) {
   const pathname = usePathname();
@@ -205,18 +222,32 @@ function ItemNavegacao({
     <Link
       href={item.href}
       onClick={aoNavegar}
-      title={recolhido ? item.rotulo : undefined}
+      title={recolhido ? `${item.rotulo}${aviso > 0 ? ` — ${aviso} em atraso` : ''}` : undefined}
       aria-current={ativo ? 'page' : undefined}
       className={cn(
-        'group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+        'group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
         ativo ? 'bg-marca-50 text-marca-800' : 'text-texto-suave hover:bg-superficie hover:text-texto',
         recolhido && 'lg:justify-center lg:px-2',
       )}
     >
-      <Icone className={cn('h-4.5 w-4.5 shrink-0', ativo ? 'text-marca-600' : 'text-texto-fraco')} />
+      <span className="relative shrink-0">
+        <Icone className={cn('h-4.5 w-4.5', ativo ? 'text-marca-600' : 'text-texto-fraco')} />
+        {/* Recolhido não há espaço para o número: um ponto avisa que há algo. */}
+        {aviso > 0 && recolhido && (
+          <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-erro" aria-hidden />
+        )}
+      </span>
       {!recolhido && (
         <>
           <span className="flex-1 truncate">{item.rotulo}</span>
+          {aviso > 0 && (
+            <span
+              className="shrink-0 rounded-full bg-erro px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-white"
+              title={`${aviso} com prazo vencido`}
+            >
+              {aviso > 99 ? '99+' : aviso}
+            </span>
+          )}
           {item.selo && (
             <Selo tom="alerta" className="shrink-0 text-[10px]">
               {item.selo}

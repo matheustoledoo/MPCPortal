@@ -9,7 +9,10 @@
  * que só existem na resposta da API quando o usuário é admin (garantido por RLS).
  */
 
-export type TipoColuna = 'texto' | 'data' | 'numero' | 'moeda' | 'cnpj' | 'status' | 'booleano' | 'longo';
+export type TipoColuna =
+  | 'texto' | 'data' | 'numero' | 'moeda' | 'cnpj' | 'status' | 'booleano' | 'longo'
+  /** Contador de processos abertos, com atalho para o Controle Geral. */
+  | 'processos';
 
 export interface DefinicaoColuna {
   /** Chave do campo. Para confidenciais, o caminho dentro de `administrativo`. */
@@ -63,6 +66,9 @@ export const COLUNAS_GERAIS: DefinicaoColuna[] = [
   { campo: 'validade', rotulo: 'Validade RT', tipo: 'status', largura: 120, origem: 'Saúde: VALIDADE', editavel: true, padrao: true },
   { campo: 'validade_data', rotulo: 'Validade RT (data)', tipo: 'data', largura: 150, origem: 'Saúde: VALIDADE (datas)', editavel: true, padrao: false },
   { campo: 'observacoes', rotulo: 'Observações', tipo: 'longo', largura: 260, origem: 'PortalMPC', editavel: true, padrao: false },
+  // Aviso vindo do Controle Geral. Não é editável aqui: o número sai do
+  // gatilho que conta os processos abertos daquela empresa.
+  { campo: 'processos_abertos', rotulo: 'Processos', tipo: 'processos', largura: 130, origem: 'Controle Geral', editavel: false, padrao: true },
   { campo: 'origem', rotulo: 'Origem', tipo: 'status', largura: 140, origem: 'Rastreabilidade da importação', editavel: false, padrao: true },
   { campo: 'necessita_revisao', rotulo: 'Revisão', tipo: 'booleano', largura: 100, origem: 'Validação automática', editavel: true, padrao: true },
   { campo: 'revisao_motivo', rotulo: 'Motivo da revisão', tipo: 'longo', largura: 260, origem: 'Validação automática', editavel: false, padrao: false },

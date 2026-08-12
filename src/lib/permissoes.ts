@@ -45,6 +45,7 @@ export function rotuloRole(role: Role | null | undefined): string {
 export const PERMISSOES = {
   telaInicio: 'tela.inicio',
   telaLegalizacao: 'tela.legalizacao',
+  telaProcessos: 'tela.processos',
   telaReferencias: 'tela.referencias',
   telaImportacoes: 'tela.importacoes',
   telaAtribuicoes: 'tela.atribuicoes',
@@ -62,6 +63,11 @@ export const PERMISSOES = {
   exportarLegalizacao: 'dados.legalizacao.exportar',
   editarAdministrativo: 'dados.administrativo.editar',
   exportarAdministrativo: 'dados.administrativo.exportar',
+
+  criarProcessos: 'dados.processos.criar',
+  editarProcessos: 'dados.processos.editar',
+  excluirProcessos: 'dados.processos.excluir',
+  gerenciarOpcoes: 'dados.opcoes.gerenciar',
 
   gerenciarUsuarios: 'admin.usuarios.gerenciar',
   concederPermissoes: 'admin.usuarios.permissoes',
@@ -132,6 +138,29 @@ export function podeVerAuditoria(perfil: Usuario): boolean {
   return pode(perfil, PERMISSOES.telaAuditoria);
 }
 
+/* --- Controle Geral (processos) ------------------------------------------ */
+
+export function podeLerProcessos(perfil: Usuario): boolean {
+  return pode(perfil, PERMISSOES.telaProcessos);
+}
+
+export function podeCriarProcessos(perfil: Usuario): boolean {
+  return pode(perfil, PERMISSOES.criarProcessos);
+}
+
+export function podeEditarProcessos(perfil: Usuario): boolean {
+  return pode(perfil, PERMISSOES.editarProcessos);
+}
+
+export function podeExcluirProcessos(perfil: Usuario): boolean {
+  return pode(perfil, PERMISSOES.excluirProcessos);
+}
+
+/** Promover um valor digitado a opção permanente das listas do time. */
+export function podeGerenciarOpcoes(perfil: Usuario): boolean {
+  return pode(perfil, PERMISSOES.gerenciarOpcoes);
+}
+
 /**
  * Uma coluna é editável quando o usuário pode editar a base E a coluna está
  * na lista pessoal dele. Lista vazia significa "sem restrição de coluna".
@@ -152,6 +181,7 @@ export function podeEditarColuna(perfil: Usuario, campo: string, confidencial = 
 export const ROTAS_PROTEGIDAS: { rota: string; permissao: string }[] = [
   { rota: '/dashboard', permissao: PERMISSOES.telaDashboard },
   { rota: '/legalizacao', permissao: PERMISSOES.telaLegalizacao },
+  { rota: '/controle-geral', permissao: PERMISSOES.telaProcessos },
   { rota: '/administrativo', permissao: PERMISSOES.telaAdministrativo },
   { rota: '/referencias', permissao: PERMISSOES.telaReferencias },
   { rota: '/importacoes', permissao: PERMISSOES.telaImportacoes },
@@ -194,6 +224,7 @@ export function rotaInicial(perfil: Usuario): string {
   const preferencia = [
     { rota: '/dashboard', permissao: PERMISSOES.telaDashboard },
     { rota: '/legalizacao', permissao: PERMISSOES.telaLegalizacao },
+    { rota: '/controle-geral', permissao: PERMISSOES.telaProcessos },
     { rota: '/fiscal', permissao: PERMISSOES.telaFiscal },
     { rota: '/contabil', permissao: PERMISSOES.telaContabil },
     { rota: '/departamento-pessoal', permissao: PERMISSOES.telaDp },

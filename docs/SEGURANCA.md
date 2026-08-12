@@ -306,3 +306,24 @@ Atribuição mensal com prazo em 3 dias e alerta de 5:
 - `concluir_atribuicao()` moveu o prazo de `2026-08-09` para `2026-09-09` — exatamente um mês.
 - Usuário de outro time tentando concluir: `42501` Somente o responsável pode concluir esta atribuição.
 - Usuário sem `admin.atribuicoes.gerenciar` tentando criar: recusado pela RLS.
+
+### 7.6 Controle Geral (migration 0015)
+
+`legalizacao_processos` tem RLS com permissão própria por operação: `tela.processos` para
+ler, `dados.processos.criar` / `.editar` / `.excluir` para escrever. A semeadura espelhou o
+acesso que cada um já tinha na base de Legalização.
+
+| Verificação | Resultado |
+| --- | --- |
+| Colaborador de Legalização cria processo | permitido |
+| Fiscal (sem `tela.processos`) lista processos | **0 linhas** |
+| Fiscal tenta criar processo | `42501` recusado pela RLS |
+| Valor fora de toda lista (`Habite-se`, `Secretaria de Obras`) | aceito e gravado |
+| Promover valor digitado a opção do time | permitido com `dados.opcoes.gerenciar` |
+| Lançar informando só o CNPJ pontuado | vínculo com a empresa criado pelo gatilho, razão social corrigida pelo cadastro |
+| Contador na base principal após criar / concluir | `1 → 0`, com o prazo mais próximo acompanhando |
+| Situação do prazo | `atrasado` / `atencao` conforme as duas regras do Excel |
+
+`buscar_empresas_para_processo` e `processos_estatisticas` são `SECURITY DEFINER` e checam
+`can_read_legalizacao()` / `pode_ler_processos()` na primeira linha do corpo — um usuário sem
+acesso recebe lista e painel vazios, não um erro que revele a existência dos dados.

@@ -68,6 +68,10 @@ export interface Empresa {
   revisao_motivo: string | null;
   responsavel_id: string | null;
 
+  /** Aviso vindo do Controle Geral — mantidos por gatilho, não editáveis. */
+  processos_abertos: number;
+  processo_proximo_prazo: string | null;
+
   created_at: string;
   updated_at: string;
   created_by: string | null;
@@ -284,6 +288,75 @@ export interface AtribuicaoDoUsuario {
   dias_restantes: number;
   situacao: SituacaoAtribuicao;
   ultima_conclusao: string | null;
+}
+
+/* -------------------------------------------------------------------------- */
+/* CONTROLE_GERAL — processos de legalização                                   */
+/* -------------------------------------------------------------------------- */
+
+/** Situação do prazo, calculada — não é digitada por ninguém. */
+export type SituacaoProcesso = 'atrasado' | 'atencao' | 'em_dia' | 'sem_prazo' | 'encerrado';
+
+export interface Processo {
+  id: string;
+  empresa_id: string | null;
+  empresa: string;
+  cnpj: string | null;
+  status: string;
+  tipo_servico: string | null;
+  orgao: string | null;
+  protocolo: string | null;
+  data_entrada: string;
+  prazo: string | null;
+  responsavel_id: string | null;
+  responsavel: string | null;
+  proxima_acao: string | null;
+  observacoes: string | null;
+  indicador: string | null;
+  ultima_atualizacao: string;
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+  updated_by: string | null;
+}
+
+/** Resultado do autocomplete de empresa (`buscar_empresas_para_processo`). */
+export interface EmpresaSugerida {
+  id: string;
+  razao_social: string;
+  nome_fantasia: string | null;
+  cnpj: string | null;
+  cidade: string | null;
+  codigo: string | null;
+  status: string | null;
+  processos_abertos: number;
+  responsavel_id: string | null;
+}
+
+export interface ContagemRotulada {
+  valor: string;
+  total: number;
+}
+
+/** Retorno de `processos_estatisticas()` — as três abas DASHBOARD juntas. */
+export interface EstatisticasProcessos {
+  total: number;
+  abertos: number;
+  atrasados: number;
+  atencao: number;
+  sem_prazo: number;
+  concluidos_mes: number;
+  por_status: ContagemRotulada[];
+  por_orgao: ContagemRotulada[];
+  por_tipo: ContagemRotulada[];
+  por_responsavel: ContagemRotulada[];
+  vencimentos_por_mes: { mes: number; total: number }[];
+}
+
+export interface OpcaoCombo {
+  grupo: string;
+  valor: string;
+  ordem: number;
 }
 
 export interface ExecucaoAtribuicao {
