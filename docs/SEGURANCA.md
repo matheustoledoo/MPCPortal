@@ -243,6 +243,23 @@ executável por `anon`. As migrations `0001`–`0014` estão aplicadas.
 
 ---
 
+## 6.1 Recriação no projeto MetaPlano (outubro/2026)
+
+O banco foi recriado do zero no projeto `MetaPlano` a partir das migrations deste repositório.
+Os controles críticos foram verificados de novo no banco novo, por impersonação e revertidos:
+
+| Verificação | Resultado |
+| --- | --- |
+| Login real (`/auth/v1/token`) das 5 contas | HTTP 200 nas cinco; senha errada → HTTP 400 |
+| Gestor recebe `tela.administrativo` por INSERT direto | `42501` |
+| Colaborador muda o próprio papel para admin | `42501` |
+| Colaborador tenta rebaixar o admin | 0 linhas afetadas — a RLS esconde a linha |
+| Rebaixar `adm@metaplanocontabil.com.br` por manutenção | permissões confidenciais 5 → 0 |
+| Funções executáveis por `anon` | 0 |
+
+As evidências das seções 3 e 7 foram colhidas no projeto anterior, com dados reais; as que
+dependem das 373 empresas serão repetidas após a nova importação.
+
 ## 7. Evidências do modelo modular (migrations 0010–0014)
 
 Testes executados por impersonação (`request.jwt.claims` com o `sub` de cada usuário),

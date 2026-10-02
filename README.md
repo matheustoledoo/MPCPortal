@@ -37,7 +37,8 @@ A arquitetura já está preparada para os módulos Fiscal, Contábil e Departame
 ### 1. Pré-requisitos
 
 - Node.js 20 ou superior
-- Um projeto Supabase (este repositório está apontado para o projeto `PortalMPC`)
+- Um projeto Supabase — hoje o projeto **`MetaPlano`** (`moozepskoneteaszhfkz`, organização
+  MetaPlanoPortal, região São Paulo)
 
 ### 2. Instalar dependências
 
@@ -67,8 +68,8 @@ Preencha `.env.local`:
 
 ### 4. Migrations
 
-As migrations `0001` a `0015` **já estão aplicadas** no projeto `PortalMPC`. Nada a fazer
-para rodar contra este banco.
+As migrations `0001` a `0015` **já estão aplicadas** no projeto `MetaPlano`, recriado do zero
+em outubro/2026 a partir deste repositório. Nada a fazer para rodar contra este banco.
 
 Para um banco novo, ou para conferir o que existe:
 
@@ -76,7 +77,9 @@ Para um banco novo, ou para conferir o que existe:
 npm run migrations:juntar -- 0001   # gera supabase/APLICAR_NO_SQL_EDITOR.sql com tudo
 ```
 
-Abra **Supabase → SQL Editor**, cole o arquivo e execute. O script é idempotente
+Abra **Supabase → SQL Editor**, cole o arquivo e execute. (Pelo SQL Editor tudo roda direto.
+Já pelo conector do Supabase no Claude, comandos `DROP` pedem confirmação do usuário antes de
+executar; num banco vazio os `drop ... if exists` não fazem nada e podem ser omitidos.) O script é idempotente
 (`create or replace`, `if not exists`, `drop policy if exists`), então rodar duas vezes não
 quebra nada. A migration `0010` semeia as permissões dos usuários já existentes espelhando o
 que eles podiam fazer antes — ninguém ganha nem perde acesso na virada.
@@ -315,7 +318,12 @@ npx tsx scripts/import-referencias.ts --sql   # abas auxiliares
 O ETL é **idempotente**: o conflito é resolvido por `chave_identificacao`
 (CNPJ normalizado), então reexecutar atualiza em vez de duplicar.
 
-Resultado da carga já executada:
+> **Projeto `MetaPlano`: base de empresas ainda vazia.** O banco foi recriado do zero e os
+> arquivos de origem não estavam mais disponíveis no ambiente de desenvolvimento. Coloque
+> `Planilha_Saude.xlsx` e `Adm.xlsx` em `data/planilhas/` e rode a importação — o resultado
+> abaixo é o da carga original, e deve se repetir.
+
+Resultado da carga original:
 
 | Métrica | Valor |
 | --- | --- |
@@ -386,12 +394,16 @@ Um usuário não consegue alterar a própria função, área ou situação — o
 
 | E-mail | Senha | Função / time | Permissões | Cai em |
 | --- | --- | --- | --: | --- |
-| `admin@portalmpc.local` | `PortalMPC@2026` | admin / administração | todas (21) | `/dashboard` |
-| `gestor.legalizacao@portalmpc.local` | `Gestor@2026` | gestor / legalização | 10 | `/legalizacao` |
-| `legalizacao@portalmpc.local` | `Legalizacao@2026` | colaborador / legalização | 8 | `/legalizacao` |
+| `admin@portalmpc.local` | `PortalMPC@2026` | admin / administração | todas (26) | `/dashboard` |
+| `gestor.legalizacao@portalmpc.local` | `Gestor@2026` | gestor / legalização | 15 | `/legalizacao` |
+| `legalizacao@portalmpc.local` | `Legalizacao@2026` | colaborador / legalização | 12 | `/legalizacao` |
 | `fiscal@portalmpc.local` | `Fiscal@2026` | colaborador / fiscal | 2 | `/fiscal` |
 
-As permissões foram semeadas pela migration `0010` espelhando o acesso que cada um já tinha.
+Conta real de administração: **`adm@metaplanocontabil.com.br`** — admin / administração, todas
+as permissões. A senha foi combinada fora do repositório; troque no primeiro acesso.
+
+As permissões foram semeadas pela migration `0010` espelhando o acesso que cada um já tinha;
+a `0015` somou as do Controle Geral (admins: 26 · gestor: 15 · colaborador: 12 · fiscal: 2).
 Ajuste tudo pela tela **Usuários**.
 
 > Troque essas senhas antes de colocar o portal em uso real.
