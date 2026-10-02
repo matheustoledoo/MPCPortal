@@ -257,8 +257,17 @@ Os controles críticos foram verificados de novo no banco novo, por impersonaç�
 | Rebaixar `adm@metaplanocontabil.com.br` por manutenção | permissões confidenciais 5 → 0 |
 | Funções executáveis por `anon` | 0 |
 
-As evidências das seções 3 e 7 foram colhidas no projeto anterior, com dados reais; as que
-dependem das 373 empresas serão repetidas após a nova importação.
+Depois da recarga das planilhas (373 empresas, 358 registros administrativos), o
+isolamento dos dados confidenciais foi conferido de novo, agora com os dados reais:
+
+| Quem consulta | Empresas | Dados administrativos |
+| --- | --- | --- |
+| Colaborador da Legalização | 373 | **0** |
+| Admin (`adm@metaplanocontabil.com.br`) | 373 | 358 (R$ 159.135,98) |
+| Sem login (`anon`) | `42501` — sem privilégio na tabela | `42501` |
+
+As demais evidências das seções 3 e 7 foram colhidas no projeto anterior, com o mesmo
+schema e os mesmos dados.
 
 ## 7. Evidências do modelo modular (migrations 0010–0014)
 

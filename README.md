@@ -318,12 +318,8 @@ npx tsx scripts/import-referencias.ts --sql   # abas auxiliares
 O ETL é **idempotente**: o conflito é resolvido por `chave_identificacao`
 (CNPJ normalizado), então reexecutar atualiza em vez de duplicar.
 
-> **Projeto `MetaPlano`: base de empresas ainda vazia.** O banco foi recriado do zero e os
-> arquivos de origem não estavam mais disponíveis no ambiente de desenvolvimento. Coloque
-> `Planilha_Saude.xlsx` e `Adm.xlsx` em `data/planilhas/` e rode a importação — o resultado
-> abaixo é o da carga original, e deve se repetir.
-
-Resultado da carga original:
+Resultado da carga — idêntico na base original e no projeto `MetaPlano`, recriado do
+zero e recarregado a partir das mesmas planilhas:
 
 | Métrica | Valor |
 | --- | --- |
@@ -332,8 +328,13 @@ Resultado da carga original:
 | Só na Planilha Saúde | 15 |
 | Só no Adm.xlsx | 42 |
 | Registros administrativos | 358 |
+| Soma dos honorários da última competência | R$ 159.135,98 |
 | Divergências entre fontes | 0 |
 | Precisam de revisão manual | 7 |
+| Links de prefeitura / documentos / checklist | 40 / 17 / 49 |
+
+Na recarga do `MetaPlano`, cada tabela foi conferida por soma de verificação (md5 de
+todas as colunas, linha a linha) contra os arquivos gerados pelo ETL: as seis bateram.
 
 Relatório completo em [`docs/RELATORIO-IMPORTACAO.md`](docs/RELATORIO-IMPORTACAO.md).
 
