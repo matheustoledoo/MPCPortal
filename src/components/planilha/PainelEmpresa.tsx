@@ -19,6 +19,7 @@ export function PainelEmpresa({
   empresa,
   podeVerAdministrativo,
   podeEditar,
+  colunasEditaveis = [],
   aoFechar,
   aoSalvar,
 }: {
@@ -27,6 +28,8 @@ export function PainelEmpresa({
   empresa: LinhaEmpresa | null;
   podeVerAdministrativo: boolean;
   podeEditar: boolean;
+  /** Restrição pessoal de colunas. Vazio = sem restrição. */
+  colunasEditaveis?: string[];
   aoFechar: () => void;
   aoSalvar: (
     gerais: Record<string, unknown>,
@@ -124,6 +127,9 @@ export function PainelEmpresa({
       const gerais: Record<string, unknown> = {};
       for (const coluna of COLUNAS_GERAIS) {
         if (!coluna.editavel) continue;
+        // Não enviar o que o usuário não pode mudar: o banco recusaria o
+        // UPDATE inteiro e nada seria salvo.
+        if (colunasEditaveis.length > 0 && !colunasEditaveis.includes(coluna.campo)) continue;
         gerais[coluna.campo] = prepararValor(coluna.campo, coluna.tipo, valores[coluna.campo] ?? '');
       }
 
@@ -209,7 +215,13 @@ export function PainelEmpresa({
           )}
 
           {colunasAba.map((coluna) => {
-            const somenteLeitura = !coluna.editavel || !podeEditar;
+            // Fora das colunas atribuídas o campo aparece, mas travado — o
+            // gatilho `aplicar_colunas_permitidas` recusaria a alteração.
+            const foraDaAtribuicao =
+              !coluna.confidencial &&
+              colunasEditaveis.length > 0 &&
+              !colunasEditaveis.includes(coluna.campo);
+            const somenteLeitura = !coluna.editavel || !podeEditar || foraDaAtribuicao;
 
             if (coluna.tipo === 'longo') {
               return (

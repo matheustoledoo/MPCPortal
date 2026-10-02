@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 
 import { CabecalhoPagina } from '@/components/layout/CabecalhoPagina';
 import { ListaAuditoria } from '@/app/(portal)/auditoria/ListaAuditoria';
-import { ehAdmin } from '@/lib/permissoes';
+import { PERMISSOES, pode } from '@/lib/permissoes';
 import { obterPerfilAtual } from '@/lib/supabase/server';
 
 export const metadata = { title: 'Auditoria' };
@@ -10,7 +10,7 @@ export const metadata = { title: 'Auditoria' };
 export default async function PaginaAuditoria() {
   const perfil = await obterPerfilAtual();
   if (!perfil) redirect('/login');
-  if (!ehAdmin(perfil)) redirect('/sem-acesso');
+  if (!pode(perfil, PERMISSOES.telaAuditoria)) redirect('/sem-acesso');
 
   return (
     <>

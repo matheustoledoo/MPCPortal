@@ -16,6 +16,24 @@ import { createServerClient } from '@supabase/ssr';
 
 const ROTAS_PUBLICAS = ['/login', '/recuperar-senha', '/redefinir-senha', '/auth'];
 
+/** Distingue falha de rede/TLS de recusa de credencial. */
+function ehFalhaDeRede(erro: unknown): boolean {
+  if (!erro) return false;
+  const alvo = erro as { name?: string; message?: string; status?: number; __isAuthError?: boolean };
+  if (alvo.__isAuthError && alvo.status === 0) return true;
+  if (alvo.name === 'AuthRetryableFetchError') return true;
+  const texto = `${alvo.name ?? ''} ${alvo.message ?? ''}`.toLowerCase();
+  return (
+    texto.includes('fetch failed') ||
+    texto.includes('econnrefused') ||
+    texto.includes('enotfound') ||
+    texto.includes('etimedout') ||
+    texto.includes('certificate') ||
+    texto.includes('self-signed') ||
+    texto.includes('unable to verify')
+  );
+}
+
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
 
@@ -36,9 +54,34 @@ export async function middleware(request: NextRequest) {
     },
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user = null;
+  let indisponivel = false;
+
+  try {
+    const { data, error } = await supabase.auth.getUser();
+    if (error && ehFalhaDeRede(error)) indisponivel = true;
+    else user = data?.user ?? null;
+  } catch (erro) {
+    if (ehFalhaDeRede(erro)) indisponivel = true;
+    else throw erro;
+  }
+
+  /**
+   * Servidor de autenticação inacessível (proxy corporativo, TLS, offline).
+   *
+   * Aqui NÃO se redireciona para o login: "não consegui verificar" é diferente
+   * de "não está logado". Tratar como o mesmo caso jogava o usuário recém
+   * autenticado de volta ao login num laço — o cookie existia, mas o servidor
+   * não conseguia validá-lo.
+   *
+   * A requisição segue e a própria página mostra o diagnóstico. Não há risco
+   * de vazamento: sem alcançar o Supabase, nenhuma consulta traz dados, e a
+   * RLS continua sendo a barreira real.
+   */
+  if (indisponivel) {
+    response.headers.set('x-portalmpc-auth', 'indisponivel');
+    return response;
+  }
 
   const { pathname } = request.nextUrl;
   const ehPublica = ROTAS_PUBLICAS.some((rota) => pathname.startsWith(rota));

@@ -5,8 +5,9 @@ import { Lock } from 'lucide-react';
 import { CabecalhoPagina } from '@/components/layout/CabecalhoPagina';
 import { TabelaPlanilha } from '@/components/planilha/TabelaPlanilha';
 import { Selo } from '@/components/ui';
-import { ehAdmin } from '@/lib/permissoes';
-import { obterPerfilAtual } from '@/lib/supabase/server';
+import { responsaveisPorColuna } from '@/lib/atribuicoes';
+import { ehAdmin, rotuloPeriodicidade } from '@/lib/permissoes';
+import { criarClienteServidor, obterPerfilAtual } from '@/lib/supabase/server';
 
 export const metadata = { title: 'Planilha ADM' };
 
@@ -19,6 +20,9 @@ export default async function PaginaAdministrativo() {
   const perfil = await obterPerfilAtual();
   if (!perfil) redirect('/login');
   if (!ehAdmin(perfil)) redirect('/sem-acesso');
+
+  const supabase = await criarClienteServidor();
+  const responsaveis = await responsaveisPorColuna(supabase, perfil.id, rotuloPeriodicidade);
 
   return (
     <>
@@ -40,7 +44,13 @@ export default async function PaginaAdministrativo() {
         com o seu nome.
       </div>
 
-      <TabelaPlanilha podeVerAdministrativo podeEditar podeExcluir contexto="administrativo" />
+      <TabelaPlanilha
+        podeVerAdministrativo
+        podeEditar
+        podeExcluir
+        responsaveisPorColuna={responsaveis}
+        contexto="administrativo"
+      />
     </>
   );
 }

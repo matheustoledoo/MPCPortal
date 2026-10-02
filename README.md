@@ -1,9 +1,17 @@
 # PortalMPC
 
 Sistema interno de gestão da **Meta Plano Contábil**. Esta primeira etapa entrega o
-**módulo de Legalização** completo — autenticação, controle de acesso por área e função,
-base de dados no Supabase, importação real das planilhas de trabalho e uma tela de
-edição no estilo planilha.
+**módulo de Legalização** completo — autenticação, controle de acesso modular por
+permissão, base de dados no Supabase, importação real das planilhas de trabalho e uma
+tela de edição no estilo planilha.
+
+O administrador cria os usuários pela própria interface, define o time de cada um, marca
+em checkbox quais telas ele abre e o que pode alterar, e distribui responsabilidades
+recorrentes com prazo e aviso ("fulano atualiza a coluna Alvará todo mês").
+
+O time de Legalização trabalha em duas planilhas ligadas entre si: a **base de clientes** e o
+**Controle Geral**, que acompanha cada processo aberto num órgão com protocolo, prazo e
+responsável — e avisa na base quando uma empresa tem processo em andamento.
 
 A arquitetura já está preparada para os módulos Fiscal, Contábil e Departamento Pessoal.
 
@@ -16,6 +24,8 @@ A arquitetura já está preparada para os módulos Fiscal, Contábil e Departame
 - [Estrutura do projeto](#estrutura-do-projeto)
 - [Banco de dados](#banco-de-dados)
 - [Segurança e permissões](#segurança-e-permissões)
+- [Controle Geral](#controle-geral-a-aba-controle_geral-no-portal)
+- [Atribuições](#atribuições-quem-faz-o-quê-e-até-quando)
 - [Importação das planilhas](#importação-das-planilhas)
 - [Usuários e acessos](#usuários-e-acessos)
 - [Documentação complementar](#documentação-complementar)
@@ -27,7 +37,8 @@ A arquitetura já está preparada para os módulos Fiscal, Contábil e Departame
 ### 1. Pré-requisitos
 
 - Node.js 20 ou superior
-- Um projeto Supabase (este repositório está apontado para o projeto `PortalMPC`)
+- Um projeto Supabase — hoje o projeto **`MetaPlano`** (`moozepskoneteaszhfkz`, organização
+  MetaPlanoPortal, região São Paulo)
 
 ### 2. Instalar dependências
 
@@ -50,10 +61,30 @@ Preencha `.env.local`:
 | `NEXT_PUBLIC_SITE_URL` | URL do portal (ex.: `http://localhost:3000`) | sim |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API (`service_role`) | **nunca** |
 
-> A `service_role` é usada apenas pelos scripts de linha de comando (`scripts/`).
-> Ela nunca é importada em nenhum componente da aplicação.
+> A `service_role` é usada pelos scripts de linha de comando (`scripts/`) e pela rota
+> `POST /api/admin/usuarios`, que roda **no servidor** — criar conta no Supabase Auth
+> exige essa chave. Ela nunca é importada por nenhum componente de cliente e não aparece
+> no bundle do navegador.
 
-### 4. Rodar
+### 4. Migrations
+
+As migrations `0001` a `0015` **já estão aplicadas** no projeto `MetaPlano`, recriado do zero
+em outubro/2026 a partir deste repositório. Nada a fazer para rodar contra este banco.
+
+Para um banco novo, ou para conferir o que existe:
+
+```bash
+npm run migrations:juntar -- 0001   # gera supabase/APLICAR_NO_SQL_EDITOR.sql com tudo
+```
+
+Abra **Supabase → SQL Editor**, cole o arquivo e execute. (Pelo SQL Editor tudo roda direto.
+Já pelo conector do Supabase no Claude, comandos `DROP` pedem confirmação do usuário antes de
+executar; num banco vazio os `drop ... if exists` não fazem nada e podem ser omitidos.) O script é idempotente
+(`create or replace`, `if not exists`, `drop policy if exists`), então rodar duas vezes não
+quebra nada. A migration `0010` semeia as permissões dos usuários já existentes espelhando o
+que eles podiam fazer antes — ninguém ganha nem perde acesso na virada.
+
+### 5. Rodar
 
 ```bash
 npm run dev      # desenvolvimento em http://localhost:3000
@@ -89,23 +120,31 @@ src/
 │   │   ├── inicio/               # painel dos demais perfis
 │   │   ├── legalizacao/          # Planilha Legalização (campos gerais)
 │   │   ├── administrativo/       # Planilha ADM (inclui bloco confidencial)
-│   │   ├── usuarios/             # gestão de área e função
+│   │   ├── controle-geral/       # CONTROLE_GERAL: processos nos órgãos, com painéis
+│   │   ├── usuarios/             # criação de usuários, times e checkboxes de permissão
+│   │   ├── atribuicoes/          # quem cuida do quê, com que frequência e até quando
 │   │   ├── auditoria/            # trilha de alterações
 │   │   ├── importacoes/          # relatório da consolidação
 │   │   ├── referencias/          # portais das prefeituras e checklists
 │   │   ├── perfil/
 │   │   ├── configuracoes/
 │   │   └── fiscal|contabil|departamento-pessoal/   # módulos futuros
+│   ├── api/admin/usuarios/       # criação de conta e reset de senha (service_role)
+│   ├── api/exportar-processos/   # .xlsx no mesmo layout do CONTROLE_GERAL
 │   ├── api/exportar/             # exportação Excel com permissão no servidor
 │   ├── login/ recuperar-senha/ redefinir-senha/ auth/callback/
 │   └── sem-acesso/
 ├── components/
 │   ├── ui/                       # design system (botão, campo, selo, modal, avisos)
 │   ├── layout/                   # menu lateral, cabeçalho, área em construção
+│   ├── atribuicoes/              # bloco "minhas responsabilidades" da tela de início
+│   ├── processos/                # autocomplete de empresa e painéis do Controle Geral
 │   └── planilha/                 # tabela, célula editável, filtros, painel lateral
 ├── lib/
 │   ├── supabase/                 # clientes de navegador e servidor
 │   ├── permissoes.ts             # ponto único de decisão de permissão no frontend
+│   ├── atribuicoes.ts            # cálculo de prazo e mapa coluna → responsável
+│   ├── processos.ts              # colunas, filtros e regra de prazo do Controle Geral
 │   ├── colunas.ts                # catálogo de colunas (dirige tabela, form e export)
 │   ├── empresas.ts               # acesso a dados da base de Legalização
 │   ├── normalizacao.ts           # normalizadores compartilhados com o ETL
@@ -116,10 +155,12 @@ src/
 scripts/
 ├── import-planilhas.ts           # ETL de mesclagem (reproduzível)
 ├── import-referencias.ts         # abas auxiliares → tabelas de referência
+├── juntar-migrations.ts          # junta migrations para colar no SQL Editor
 └── seed-usuarios.ts              # criação de usuários
 
 supabase/
-├── migrations/                   # 0001 … 0009
+├── migrations/                   # 0001 … 0015 (todas aplicadas)
+├── APLICAR_NO_SQL_EDITOR.sql     # gerado por `npm run migrations:juntar`
 └── functions/importar-legalizacao/   # Edge Function usada na carga inicial
 ```
 
@@ -137,8 +178,14 @@ supabase/
 
 | Tabela | Papel |
 | --- | --- |
-| `profiles` | Perfil de aplicação ligado ao Supabase Auth (nome, e-mail, área, função, ativo) |
+| `profiles` | Perfil de aplicação ligado ao Supabase Auth (nome, e-mail, time, função, ativo) |
+| `permissoes_catalogo` | Catálogo do que pode ser concedido — alimenta os checkboxes |
+| `usuario_permissoes` | O que cada usuário recebeu |
+| `usuario_colunas` | Quais colunas cada usuário pode editar (vazio = todas) |
+| `atribuicoes` | Responsabilidades recorrentes: quem cuida do quê, com que frequência |
+| `atribuicao_execucoes` | Histórico de ciclos concluídos |
 | `legalizacao_empresas` | Base geral consolidada — 373 empresas |
+| `legalizacao_processos` | **Controle Geral**: processos em andamento nos órgãos |
 | `legalizacao_dados_administrativos` | **Confidencial**: honorários, vencimento, condições contratuais |
 | `audit_logs` | Trilha de criação, edição, exclusão, importação e exportação |
 | `import_logs` | Uma linha por execução do ETL, com o relatório completo |
@@ -169,26 +216,90 @@ alcançá-los — nem por engano, nem de propósito.
 RLS habilitada em **todas** as tabelas sensíveis; `legalizacao_dados_administrativos` usa
 `FORCE ROW LEVEL SECURITY`.
 
-| Recurso | Admin | Gestor Legalização | Colaborador Legalização | Outras áreas |
-| --- | :-: | :-: | :-: | :-: |
-| Ler base geral | ✅ | ✅ | ✅ | ❌ |
-| Criar / editar empresas | ✅ | ✅ | ✅ | ❌ |
-| Excluir empresas | ✅ | ✅ | ❌ | ❌ |
-| Ler dados administrativos | ✅ | ❌ | ❌ | ❌ |
-| Editar dados administrativos | ✅ | ❌ | ❌ | ❌ |
-| Exportar colunas ADM | ✅ | ❌ | ❌ | ❌ |
-| Gerenciar usuários | ✅ | ❌ | ❌ | ❌ |
-| Consultar auditoria | ✅ | ❌ | ❌ | ❌ |
+O acesso **não** vem mais da função (`role`): vem das permissões que o administrador
+marca por usuário. `admin` continua tendo tudo, sempre.
+
+| Grupo | Chaves |
+| --- | --- |
+| Telas | `tela.inicio`, `tela.legalizacao`, `tela.processos`, `tela.referencias`, `tela.importacoes`, `tela.atribuicoes`, `tela.fiscal`, `tela.contabil`, `tela.dp`, `tela.dashboard` |
+| Telas **exclusivas de admin** | `tela.administrativo`, `tela.auditoria`, `tela.configuracoes` |
+| Dados | `dados.legalizacao.criar`, `.editar`, `.excluir`, `.exportar` |
+| Dados (Controle Geral) | `dados.processos.criar`, `.editar`, `.excluir`, `dados.opcoes.gerenciar` |
+| Dados **exclusivos de admin** | `dados.administrativo.editar`, `dados.administrativo.exportar` |
+| Administração | `admin.usuarios.gerenciar`, `admin.usuarios.permissoes`, `admin.atribuicoes.gerenciar` |
+
+As chaves marcadas como **exclusivas de admin** não podem ser concedidas a mais ninguém
+— e isso é garantido em quatro lugares independentes:
+
+1. O checkbox nem aparece na tela de criação para quem não é admin.
+2. `pode()` (`src/lib/permissoes.ts`) recusa a chave mesmo que ela apareça na lista do
+   usuário, então um dado corrompido não libera a tela.
+3. A rota `POST /api/admin/usuarios` filtra as chaves antes de gravar.
+4. O gatilho `proteger_permissoes_de_admin` no PostgreSQL levanta `42501` no `INSERT`.
+   Rebaixar alguém de admin apaga automaticamente essas permissões
+   (`limpar_permissoes_ao_rebaixar`).
 
 Camadas de proteção, da mais externa para a mais interna:
 
 1. **`middleware.ts`** — sem sessão, nenhuma rota do portal abre.
-2. **Layout e páginas** — cada página confere área e função antes de renderizar.
+2. **Layout e páginas** — cada página confere a permissão exigida antes de renderizar
+   (`ROTAS_PROTEGIDAS` em `src/lib/permissoes.ts` é a fonte única, compartilhada com o menu).
 3. **Rota de exportação** — decide as colunas permitidas no servidor, ignorando o pedido do cliente.
 4. **RLS no PostgreSQL** — a barreira que vale. Acesso direto pela URL, pelo PostgREST
    ou por SQL devolve zero linhas confidenciais para quem não é admin.
+5. **Gatilho de coluna** — `aplicar_colunas_permitidas` recusa alterações fora das colunas
+   atribuídas ao usuário, já que RLS não distingue coluna.
 
 Ver [`docs/SEGURANCA.md`](docs/SEGURANCA.md) para as evidências dos testes executados.
+
+### Controle Geral (a aba CONTROLE_GERAL, no portal)
+
+Segunda planilha da Legalização: o acompanhamento de cada processo aberto num órgão —
+abertura, alvará, vigilância, baixa — com protocolo, prazo e responsável. As 13 colunas, a
+ordem e as listas vieram do arquivo original.
+
+**Ligada à base de clientes.** Ao lançar um processo, digitar o nome, o CNPJ ou o código do
+cliente abre o autocomplete; escolher preenche razão social e CNPJ e cria o vínculo. Se
+alguém digitar só o CNPJ, o gatilho acha a empresa sozinho e corrige o nome pelo cadastro —
+assim a mesma empresa não aparece escrita de dez formas diferentes.
+
+**Avisa a planilha principal.** A base geral ganhou a coluna *Processos*: um selo com quantos
+processos aquela empresa tem em aberto, vermelho se algum venceu, âmbar se vence em até três
+dias. Clicar abre o Controle Geral já filtrado; do processo, a seta volta para o cadastro. No
+menu lateral, o número de atrasados aparece em vermelho ao lado do item.
+
+**Alerta de prazo automático.** As duas regras de formatação condicional do Excel viraram
+`processo_situacao()`: vencido e não encerrado destaca a linha em vermelho; vencendo em até
+três dias, em âmbar. Nada disso é digitado.
+
+**Toda lista aceita valor de fora.** Status, tipo de serviço, órgão, próxima ação e indicador
+têm listas — as originais, mais opções que faltavam (Habite-se não estava lá; CETESB, CRM,
+AMLURB e Sefaz também não). Em qualquer uma dá para digitar um valor novo: ele vale para
+aquele registro, e quem tem `dados.opcoes.gerenciar` pode guardá-lo na lista do time pelo
+próprio menu.
+
+**Painéis embutidos.** As abas DASHBOARD, DASHBOARD_ORGAO e DASHBOARD_EXECUTIVO viraram um
+painel só, com números clicáveis que filtram a tabela — e um por responsável, que o arquivo
+não tinha. Escolher o tipo de serviço sugere o órgão e um prazo típico, sem sobrescrever o
+que já estiver preenchido.
+
+**Exportação fiel.** O botão Exportar gera um .xlsx com a aba CONTROLE_GERAL nas mesmas
+colunas, com o mesmo vermelho e o mesmo âmbar, mais as abas de painel — para quem precisar
+mandar o arquivo para fora do portal.
+
+### Atribuições (quem faz o quê, e até quando)
+
+Uma atribuição diz: *"fulano@metaplano.com, do time de Legalização, mantém a coluna
+Alvará de todos os clientes atualizada todo mês"*. Ela guarda responsável, colunas,
+periodicidade (semanal a anual, ou avulsa), próximo prazo e com quantos dias de
+antecedência avisar.
+
+- O responsável vê tudo em **Início**, com selo verde/âmbar/vermelho conforme o prazo.
+- Ao concluir um ciclo, `concluir_atribuicao()` registra a competência e **adianta o prazo
+  sozinho** conforme a periodicidade. Atribuição avulsa se encerra ao ser concluída.
+- Quem cuida de cada coluna aparece no cabeçalho da planilha (ícone de pessoa) para
+  **qualquer** usuário — saber a quem recorrer não depende de permissão.
+- Criar, editar e apagar atribuições exige `admin.atribuicoes.gerenciar`.
 
 ---
 
@@ -207,7 +318,12 @@ npx tsx scripts/import-referencias.ts --sql   # abas auxiliares
 O ETL é **idempotente**: o conflito é resolvido por `chave_identificacao`
 (CNPJ normalizado), então reexecutar atualiza em vez de duplicar.
 
-Resultado da carga já executada:
+> **Projeto `MetaPlano`: base de empresas ainda vazia.** O banco foi recriado do zero e os
+> arquivos de origem não estavam mais disponíveis no ambiente de desenvolvimento. Coloque
+> `Planilha_Saude.xlsx` e `Adm.xlsx` em `data/planilhas/` e rode a importação — o resultado
+> abaixo é o da carga original, e deve se repetir.
+
+Resultado da carga original:
 
 | Métrica | Valor |
 | --- | --- |
@@ -225,7 +341,34 @@ Relatório completo em [`docs/RELATORIO-IMPORTACAO.md`](docs/RELATORIO-IMPORTACA
 
 ## Usuários e acessos
 
-### Criar um usuário
+### Criar um usuário (pela tela)
+
+**Usuários → Novo usuário.** Preencha nome, e-mail, senha inicial, time e função; os
+checkboxes já vêm sugeridos conforme o time escolhido e podem ser ajustados antes de
+salvar. A conta nasce confirmada e o usuário já entra.
+
+A criação passa por `POST /api/admin/usuarios`, que roda **no servidor** porque exige a
+`service_role` — chave que nunca é enviada ao navegador. Configure
+`SUPABASE_SERVICE_ROLE_KEY` no `.env.local`; sem ela a tela responde com uma mensagem
+clara em vez de falhar em silêncio.
+
+Quem pode criar: qualquer usuário com `admin.usuarios.gerenciar`. Só um **admin** cria
+outro admin.
+
+### Ajustar permissões
+
+Na mesma tela, selecione a pessoa na lista. O painel da direita traz:
+
+- **Time e função** — o time é o que agrupa a pessoa na operação;
+- **Permissões** — checkboxes por grupo (telas / dados / administração), salvos na hora;
+- **Colunas que pode editar** — deixe tudo desmarcado para liberar todas as colunas;
+  marcando alguma, o usuário passa a editar somente aquelas, e as demais ficam em
+  modo leitura na planilha (com cadeado no cabeçalho e explicação no tooltip).
+
+Delegação funciona: dê `admin.usuarios.gerenciar` + `admin.usuarios.permissoes` a um
+gestor e ele passa a configurar o próprio time — sem nunca alcançar as telas de admin.
+
+### Criar usuários por script
 
 ```bash
 npm run seed:usuarios
@@ -238,19 +381,10 @@ Ou pelo painel: **Supabase → Authentication → Users → Add user**, preenche
 { "nome": "Maria Silva", "area": "legalizacao", "role": "colaborador" }
 ```
 
-O gatilho `handle_new_user` cria o registro em `profiles` automaticamente.
+O gatilho `handle_new_user` cria o registro em `profiles` automaticamente. Contas criadas
+assim nascem **sem permissão nenhuma** — conceda pela tela de Usuários.
 
-### Definir área e função
-
-Pela tela **Usuários** (somente admin) ou por SQL:
-
-```sql
-update public.profiles
-set area = 'legalizacao', role = 'gestor'
-where email = 'maria@metaplanocontabil.com.br';
-```
-
-**Áreas:** `legalizacao`, `fiscal`, `contabil`, `departamento_pessoal`, `administracao`
+**Times:** `legalizacao`, `fiscal`, `contabil`, `departamento_pessoal`, `administracao`
 **Funções:** `admin`, `gestor`, `colaborador`
 
 Um usuário não consegue alterar a própria função, área ou situação — o gatilho
@@ -258,12 +392,19 @@ Um usuário não consegue alterar a própria função, área ou situação — o
 
 ### Contas de teste
 
-| E-mail | Senha | Função / área | Cai em |
-| --- | --- | --- | --- |
-| `admin@portalmpc.local` | `PortalMPC@2026` | admin / administração | `/dashboard` |
-| `gestor.legalizacao@portalmpc.local` | `Gestor@2026` | gestor / legalização | `/legalizacao` |
-| `legalizacao@portalmpc.local` | `Legalizacao@2026` | colaborador / legalização | `/legalizacao` |
-| `fiscal@portalmpc.local` | `Fiscal@2026` | colaborador / fiscal | `/fiscal` |
+| E-mail | Senha | Função / time | Permissões | Cai em |
+| --- | --- | --- | --: | --- |
+| `admin@portalmpc.local` | `PortalMPC@2026` | admin / administração | todas (26) | `/dashboard` |
+| `gestor.legalizacao@portalmpc.local` | `Gestor@2026` | gestor / legalização | 15 | `/legalizacao` |
+| `legalizacao@portalmpc.local` | `Legalizacao@2026` | colaborador / legalização | 12 | `/legalizacao` |
+| `fiscal@portalmpc.local` | `Fiscal@2026` | colaborador / fiscal | 2 | `/fiscal` |
+
+Conta real de administração: **`adm@metaplanocontabil.com.br`** — admin / administração, todas
+as permissões. A senha foi combinada fora do repositório; troque no primeiro acesso.
+
+As permissões foram semeadas pela migration `0010` espelhando o acesso que cada um já tinha;
+a `0015` somou as do Controle Geral (admins: 26 · gestor: 15 · colaborador: 12 · fiscal: 2).
+Ajuste tudo pela tela **Usuários**.
 
 > Troque essas senhas antes de colocar o portal em uso real.
 
@@ -275,6 +416,29 @@ Um usuário não consegue alterar a própria função, área ou situação — o
 | "O servidor de autenticação recusou a consulta" | Conta criada por SQL com colunas de token em NULL | Rode a migration `0009` ou recrie com `npm run seed:usuarios` |
 | "Chave do Supabase inválida" | `NEXT_PUBLIC_SUPABASE_ANON_KEY` errada ou ausente | Confira o `.env.local` |
 | "A sessão não pôde ser salva" | Navegador bloqueando cookies de `localhost` | Libere cookies para o site |
+| Entra e volta para o login, com `AuthRetryableFetchError: fetch failed` no terminal | Rede corporativa com inspeção de TLS: o Node não confia no certificado da empresa | Suba com `$env:NODE_OPTIONS="--use-system-ca"` (veja abaixo) |
+
+#### Rede corporativa (proxy com inspeção de TLS)
+
+O navegador confia no certificado da empresa porque ele está no Windows; o
+Node.js usa a própria lista de autoridades e recusa a conexão. O portal abre,
+o login autentica, mas o servidor não consegue validar a sessão — e o usuário
+volta para a tela de login.
+
+```powershell
+# PowerShell — Node 22 ou superior
+$env:NODE_OPTIONS="--use-system-ca"
+npm run start
+```
+
+```powershell
+# Alternativa: apontar o certificado raiz exportado da empresa
+$env:NODE_EXTRA_CA_CERTS="C:\caminho\ca-empresa.cer"
+npm run start
+```
+
+Quando isso acontece, o portal agora mostra uma tela explicando a causa e o
+comando, em vez de ficar repetindo a tela de login.
 
 ### Redirecionamento após o login
 

@@ -5,9 +5,7 @@ import { useState, type FormEvent } from 'react';
 import { Eye, EyeOff, Lock, Mail } from 'lucide-react';
 
 import { Botao, Campo } from '@/components/ui';
-import { rotaInicial } from '@/lib/permissoes';
 import { criarClienteNavegador } from '@/lib/supabase/client';
-import type { Perfil } from '@/types/banco';
 
 /** Traduz os erros do Supabase Auth para mensagens úteis em português. */
 function traduzirErro(mensagem: string): string {
@@ -91,10 +89,10 @@ export function FormularioLogin({ proximo }: { proximo?: string }) {
         .update({ ultimo_acesso: new Date().toISOString() })
         .eq('id', data.user.id);
 
+      // O destino sai do servidor: só ele conhece as permissões concedidas e
+      // sabe qual é a primeira tela que este usuário realmente pode abrir.
       const destino =
-        proximo && proximo.startsWith('/') && !proximo.startsWith('//')
-          ? proximo
-          : rotaInicial({ ativo: perfil.ativo, area: perfil.area, role: perfil.role } as Perfil);
+        proximo && proximo.startsWith('/') && !proximo.startsWith('//') ? proximo : '/';
 
       // Navegação completa em vez de router.replace + router.refresh.
       // Os dois juntos competiam: o refresh recarregava /login e cancelava a

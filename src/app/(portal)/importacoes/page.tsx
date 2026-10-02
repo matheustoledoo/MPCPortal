@@ -4,7 +4,7 @@ import { FileStack } from 'lucide-react';
 
 import { CabecalhoPagina } from '@/components/layout/CabecalhoPagina';
 import { CabecalhoCartao, Cartao, EstadoVazio, Indicador, Selo } from '@/components/ui';
-import { podeLerLegalizacao } from '@/lib/permissoes';
+import { PERMISSOES, pode } from '@/lib/permissoes';
 import { criarClienteServidor, obterPerfilAtual } from '@/lib/supabase/server';
 import type { Divergencia, LogImportacao } from '@/types/banco';
 
@@ -37,7 +37,7 @@ interface ResumoImportacao {
 export default async function PaginaImportacoes() {
   const perfil = await obterPerfilAtual();
   if (!perfil) redirect('/login');
-  if (!podeLerLegalizacao(perfil)) redirect('/sem-acesso');
+  if (!pode(perfil, PERMISSOES.telaImportacoes)) redirect('/sem-acesso');
 
   const supabase = await criarClienteServidor();
 

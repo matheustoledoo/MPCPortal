@@ -44,11 +44,14 @@ export function CelulaEditavel({
   coluna,
   valor,
   editavel,
+  dicaBloqueio,
   aoSalvar,
 }: {
   coluna: DefinicaoColuna;
   valor: unknown;
   editavel: boolean;
+  /** Explica por que a célula está travada — some a dúvida de "por que não edito?". */
+  dicaBloqueio?: string;
   aoSalvar: (novoValor: string) => Promise<void>;
 }) {
   const [editando, setEditando] = useState(false);
@@ -172,7 +175,7 @@ export function CelulaEditavel({
       }}
       tabIndex={editavel && coluna.editavel ? 0 : -1}
       role={editavel && coluna.editavel ? 'button' : undefined}
-      title={editavel && coluna.editavel ? 'Duplo clique para editar' : undefined}
+      title={editavel && coluna.editavel ? 'Duplo clique para editar' : dicaBloqueio}
       className={cn(
         'min-h-6 w-full truncate rounded px-1 py-0.5',
         editavel && coluna.editavel && 'cursor-cell hover:bg-marca-50',

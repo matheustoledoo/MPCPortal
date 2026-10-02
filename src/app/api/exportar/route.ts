@@ -5,7 +5,7 @@ import ExcelJS from 'exceljs';
 import { COLUNAS_GERAIS, TODAS_COLUNAS, type DefinicaoColuna } from '@/lib/colunas';
 import { formatarCnpj } from '@/lib/normalizacao';
 import { criarClienteServidor, obterPerfilAtual } from '@/lib/supabase/server';
-import { ehAdmin, podeLerLegalizacao } from '@/lib/permissoes';
+import { PERMISSOES, ehAdmin, pode, podeLerLegalizacao } from '@/lib/permissoes';
 import type { DadosAdministrativos, Empresa } from '@/types/banco';
 
 export const runtime = 'nodejs';
@@ -31,7 +31,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ erro: 'Sessão inválida.' }, { status: 401 });
   }
   if (!podeLerLegalizacao(perfil)) {
-    return NextResponse.json({ erro: 'Sem permissão para exportar esta base.' }, { status: 403 });
+    return NextResponse.json({ erro: 'Sem permissão para acessar esta base.' }, { status: 403 });
+  }
+  // Ler e baixar são coisas diferentes: exportar leva a base inteira para fora
+  // do portal, então tem permissão própria.
+  if (!pode(perfil, PERMISSOES.exportarLegalizacao)) {
+    return NextResponse.json(
+      { erro: 'Você não tem permissão para exportar. Peça "Exportar Legalização" ao administrador.' },
+      { status: 403 },
+    );
   }
 
   const corpo = (await request.json().catch(() => ({}))) as {

@@ -26,6 +26,7 @@ import { AlertTriangle, CheckCircle2, Info, Loader2, X, XCircle } from 'lucide-r
 import { cn } from '@/lib/cn';
 
 export { cn };
+export { Combo, type PropsCombo } from '@/components/ui/Combo';
 
 /* -------------------------------------------------------------------------- */
 /* Botão                                                                       */

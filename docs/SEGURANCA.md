@@ -11,13 +11,46 @@ o que o PostgreSQL já decidiu. Esconder um botão não é segurança.
 | --- | --- | --- |
 | 1. Middleware | `src/middleware.ts` | Navegar no portal sem sessão |
 | 2. Layout do portal | `src/app/(portal)/layout.tsx` | Entrar com perfil inexistente ou inativo |
-| 3. Guarda de página | cada `page.tsx` | Abrir `/administrativo`, `/usuarios`, `/auditoria` sem ser admin |
+| 3. Guarda de página | cada `page.tsx` | Abrir uma tela sem a permissão exigida |
 | 4. Rota de exportação | `src/app/api/exportar/route.ts` | Pedir colunas confidenciais no corpo da requisição |
-| 5. **RLS no PostgreSQL** | `supabase/migrations/0006_rls_politicas.sql` | **Tudo o mais** — inclusive acesso direto à API |
+| 5. Rota de criação de usuário | `src/app/api/admin/usuarios/route.ts` | Criar admin sem ser admin; conceder permissão confidencial |
+| 6. **RLS no PostgreSQL** | `supabase/migrations/0006`, `0010`, `0011` | **Tudo o mais** — inclusive acesso direto à API |
+| 7. Gatilhos | `0010`, `0012` e `0013` | Conceder permissão de admin a quem não é; promover-se a admin; alterar coluna fora da atribuição |
 
-As camadas 1 a 4 existem para dar boa experiência (redirecionar, avisar). A camada 5 é a
-que vale: se todas as outras falhassem, o banco continuaria devolvendo zero linhas
-confidenciais.
+As camadas 1 a 5 existem para dar boa experiência (redirecionar, avisar). As camadas 6 e 7
+são as que valem: se todas as outras falhassem, o banco continuaria devolvendo zero linhas
+confidenciais e recusando as gravações indevidas.
+
+### Permissões modulares (migration 0010)
+
+O acesso deixou de vir da função (`role`) e passa a vir de permissões concedidas por
+usuário, marcadas em checkbox pelo administrador. `admin` continua tendo tudo.
+
+Três permissões de tela e duas de dados são **exclusivas de admin**:
+`tela.administrativo`, `tela.auditoria`, `tela.configuracoes`,
+`dados.administrativo.editar` e `dados.administrativo.exportar`.
+
+Nenhum caminho concede essas chaves a outra função:
+
+| Tentativa | O que acontece |
+| --- | --- |
+| Marcar o checkbox na tela | O item vem desabilitado para quem não é admin; não aparece no formulário de criação |
+| `POST /api/admin/usuarios` com a chave no corpo | A rota filtra a chave antes de gravar (`PERMISSOES_SOMENTE_ADMIN`) |
+| `INSERT` direto em `usuario_permissoes` pela API | Gatilho `proteger_permissoes_de_admin` levanta `42501` |
+| Linha gravada por engano no banco | `pode()` no frontend recusa a chave mesmo estando na lista do usuário |
+| Rebaixar um admin para gestor | Gatilho `limpar_permissoes_ao_rebaixar` apaga as chaves confidenciais |
+| Promover-se a admin com `admin.usuarios.gerenciar` | `protect_profile_privileges` levanta `42501` — só admin promove admin |
+
+E, mesmo que uma dessas barreiras caísse, `legalizacao_dados_administrativos` continua com
+`FORCE ROW LEVEL SECURITY` e política exclusiva de `is_admin()`: a tela abriria vazia.
+
+### Restrição por coluna (migration 0012)
+
+RLS decide **linha**, não coluna. Para que "fulano só edita a coluna Alvará" fosse regra de
+banco e não só de tela, o gatilho `aplicar_colunas_permitidas` compara `old` e `new` a cada
+`UPDATE` em `legalizacao_empresas` e levanta `42501` citando exatamente quais colunas foram
+recusadas. Lista de colunas vazia = sem restrição, para que o time inteiro siga podendo
+editar a planilha.
 
 ---
 
@@ -170,8 +203,14 @@ registros, colunas e se incluiu dados administrativos. O arquivo gerado traz uma
 
 ## 5. Chaves e segredos
 
-- A `service_role` **nunca** aparece no navegador — só em `scripts/` executados na linha de comando.
+- A `service_role` **nunca** aparece no navegador. Ela é usada em dois lugares, ambos fora do
+  alcance do cliente: os `scripts/` de linha de comando e a rota `POST /api/admin/usuarios`,
+  que roda no servidor Node porque criar conta no Supabase Auth exige essa chave.
 - O cliente do navegador usa apenas `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+- `protect_profile_privileges` deixa passar escritas **sem sessão** (`auth.uid()` nulo), que é
+  como a `service_role` opera — quem tem essa chave já contorna a RLS inteira, então o gatilho
+  não estava protegendo nada nesse caminho, só quebrando a criação de usuário (migration `0013`).
+  Para qualquer sessão de usuário as regras seguem idênticas: veja 7.2.
 - `.env.local` está no `.gitignore`.
 - As planilhas de origem (`data/planilhas/*.xlsx`) e os SQL gerados a partir delas estão
   no `.gitignore`: contêm dados reais de clientes e honorários.
@@ -197,6 +236,111 @@ configurado no projeto — sem ele, a função recusa toda requisição.
 | **Senhas dos usuários de teste** | Senhas iniciais conhecidas | Trocar no primeiro acesso ou remover as contas `@portalmpc.local` antes de produção |
 | Helpers `SECURITY DEFINER` expostos a `authenticated` | Por design | Cada um devolve apenas o status do próprio chamador; `authenticated` precisa de `EXECUTE` para a RLS funcionar. Nenhuma função é executável por `anon`. |
 | MFA para administradores | Não configurado | Avaliar TOTP no Supabase Auth quando o portal for para produção |
+| **`service_role` exposta em conversa** | A chave foi colada em texto durante o desenvolvimento | **Rotacionar** em Supabase → Project Settings → API e atualizar o `.env.local` |
 
 O linter de segurança do Supabase não aponta nenhuma tabela sem RLS nem nenhuma função
-executável por `anon`.
+executável por `anon`. As migrations `0001`–`0014` estão aplicadas.
+
+---
+
+## 6.1 Recriação no projeto MetaPlano (outubro/2026)
+
+O banco foi recriado do zero no projeto `MetaPlano` a partir das migrations deste repositório.
+Os controles críticos foram verificados de novo no banco novo, por impersonação e revertidos:
+
+| Verificação | Resultado |
+| --- | --- |
+| Login real (`/auth/v1/token`) das 5 contas | HTTP 200 nas cinco; senha errada → HTTP 400 |
+| Gestor recebe `tela.administrativo` por INSERT direto | `42501` |
+| Colaborador muda o próprio papel para admin | `42501` |
+| Colaborador tenta rebaixar o admin | 0 linhas afetadas — a RLS esconde a linha |
+| Rebaixar `adm@metaplanocontabil.com.br` por manutenção | permissões confidenciais 5 → 0 |
+| Funções executáveis por `anon` | 0 |
+
+As evidências das seções 3 e 7 foram colhidas no projeto anterior, com dados reais; as que
+dependem das 373 empresas serão repetidas após a nova importação.
+
+## 7. Evidências do modelo modular (migrations 0010–0014)
+
+Testes executados por impersonação (`request.jwt.claims` com o `sub` de cada usuário),
+todos revertidos ao final — o banco ficou no estado anterior.
+
+### 7.1 Permissões exclusivas de admin
+
+`INSERT` direto em `usuario_permissoes`, sem passar pela interface:
+
+| Tentativa | Resultado |
+| --- | --- |
+| gestor → `tela.administrativo` | `42501` A permissão "tela.administrativo" é exclusiva de administradores. |
+| gestor → `tela.auditoria` | `42501` idem |
+| gestor → `tela.configuracoes` | `42501` idem |
+| colaborador → `dados.administrativo.editar` | `42501` idem |
+| colaborador → `dados.administrativo.exportar` | `42501` idem |
+| colaborador → `tela.dashboard` (não confidencial) | concedida, como esperado |
+
+Rebaixar um admin para gestor apagou **5 de 5** permissões confidenciais dele
+(`limpar_permissoes_ao_rebaixar`).
+
+### 7.2 Escalada de privilégio
+
+| Tentativa | Resultado |
+| --- | --- |
+| Colaborador muda o próprio `role` para `admin` | `42501` Apenas administradores podem alterar função, área ou status. |
+| Delegado (`admin.usuarios.gerenciar`) promove outro a admin | `42501` Apenas administradores podem promover outro usuário a administrador. |
+| Delegado promove a si mesmo a admin | `42501` idem |
+| Delegado troca o **time** de alguém | permitido — é justamente o que a delegação existe para fazer |
+
+### 7.3 Visibilidade por usuário
+
+Contagens obtidas com a sessão de cada um:
+
+| Usuário | Empresas | Registros ADM | Colegas | Atribuições |
+| --- | --: | --: | --: | --: |
+| `admin@portalmpc.local` | 373 | **358** | 4 | 0 |
+| `gestor.legalizacao@portalmpc.local` | 373 | **0** | 4 | 0 |
+| `legalizacao@portalmpc.local` | 373 | **0** | 4 | 0 |
+| `fiscal@portalmpc.local` | **0** | **0** | 4 | 0 |
+
+O bloco financeiro continua invisível para todo mundo que não é admin, e o time Fiscal não
+alcança nem a base geral. Os quatro enxergam os colegas — necessário para exibir de quem é
+cada responsabilidade.
+
+### 7.4 Restrição por coluna
+
+Colaborador com a coluna `alvara` atribuída:
+
+| Ação | Resultado |
+| --- | --- |
+| `update ... set alvara = 'SIM'` | permitido |
+| `update ... set cidade = '...'` | `42501` Você não tem atribuição para alterar: cidade. Suas colunas são: alvara. |
+| Mesma coluna, sem nenhuma restrição cadastrada | permitido |
+
+### 7.5 Ciclo de vida de uma atribuição
+
+Atribuição mensal com prazo em 3 dias e alerta de 5:
+
+- `minhas_atribuicoes()` devolveu `situacao: "proxima"`, `dias_restantes: 3`.
+- `concluir_atribuicao()` moveu o prazo de `2026-08-09` para `2026-09-09` — exatamente um mês.
+- Usuário de outro time tentando concluir: `42501` Somente o responsável pode concluir esta atribuição.
+- Usuário sem `admin.atribuicoes.gerenciar` tentando criar: recusado pela RLS.
+
+### 7.6 Controle Geral (migration 0015)
+
+`legalizacao_processos` tem RLS com permissão própria por operação: `tela.processos` para
+ler, `dados.processos.criar` / `.editar` / `.excluir` para escrever. A semeadura espelhou o
+acesso que cada um já tinha na base de Legalização.
+
+| Verificação | Resultado |
+| --- | --- |
+| Colaborador de Legalização cria processo | permitido |
+| Fiscal (sem `tela.processos`) lista processos | **0 linhas** |
+| Fiscal tenta criar processo | `42501` recusado pela RLS |
+| Valor fora de toda lista (`Habite-se`, `Secretaria de Obras`) | aceito e gravado |
+| Promover valor digitado a opção do time | permitido com `dados.opcoes.gerenciar` |
+| Lançar informando só o CNPJ pontuado | vínculo com a empresa criado pelo gatilho, razão social corrigida pelo cadastro |
+| Contador na base principal após criar / concluir | `1 → 0`, com o prazo mais próximo acompanhando |
+| Situação do prazo | `atrasado` / `atencao` conforme as duas regras do Excel |
+
+`buscar_empresas_para_processo` e `processos_estatisticas` são `SECURITY DEFINER` e checam
+`can_read_legalizacao()` / `pode_ler_processos()` na primeira linha do corpo — um usuário sem
+acesso recebe lista e painel vazios, não um erro que revele a existência dos dados.

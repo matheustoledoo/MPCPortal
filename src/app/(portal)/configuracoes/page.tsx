@@ -5,25 +5,46 @@ import { Database, ShieldCheck, Table2 } from 'lucide-react';
 import { CabecalhoPagina } from '@/components/layout/CabecalhoPagina';
 import { CabecalhoCartao, Cartao, Selo } from '@/components/ui';
 import { COLUNAS_ADMINISTRATIVAS, COLUNAS_GERAIS } from '@/lib/colunas';
-import { AREAS, ROLES, ehAdmin } from '@/lib/permissoes';
+import { AREAS, PERMISSOES, ROLES, pode } from '@/lib/permissoes';
 import { criarClienteServidor, obterPerfilAtual } from '@/lib/supabase/server';
+import type { PermissaoCatalogo } from '@/types/banco';
 
 export const metadata = { title: 'Configurações' };
 
 export default async function PaginaConfiguracoes() {
   const perfil = await obterPerfilAtual();
   if (!perfil) redirect('/login');
-  if (!ehAdmin(perfil)) redirect('/sem-acesso');
+  if (!pode(perfil, PERMISSOES.telaConfiguracoes)) redirect('/sem-acesso');
 
   const supabase = await criarClienteServidor();
 
-  const [{ count: empresas }, { count: administrativos }, { count: usuarios }, { count: eventos }] =
-    await Promise.all([
-      supabase.from('legalizacao_empresas').select('id', { count: 'exact', head: true }),
-      supabase.from('legalizacao_dados_administrativos').select('id', { count: 'exact', head: true }),
-      supabase.from('profiles').select('id', { count: 'exact', head: true }),
-      supabase.from('audit_logs').select('id', { count: 'exact', head: true }),
-    ]);
+  const [
+    { count: empresas },
+    { count: administrativos },
+    { count: usuarios },
+    { count: eventos },
+    { data: catalogo },
+    { data: concessoes },
+    { count: atribuicoes },
+  ] = await Promise.all([
+    supabase.from('legalizacao_empresas').select('id', { count: 'exact', head: true }),
+    supabase.from('legalizacao_dados_administrativos').select('id', { count: 'exact', head: true }),
+    supabase.from('profiles').select('id', { count: 'exact', head: true }),
+    supabase.from('audit_logs').select('id', { count: 'exact', head: true }),
+    supabase.from('permissoes_catalogo').select('*').order('ordem'),
+    supabase.from('usuario_permissoes').select('chave'),
+    supabase.from('atribuicoes').select('id', { count: 'exact', head: true }),
+  ]);
+
+  // Quantos usuários receberam cada permissão. Admins não aparecem aqui —
+  // eles têm tudo pelo papel, sem precisar de linha em `usuario_permissoes`.
+  const quantidadePorChave: Record<string, number> = {};
+  for (const linha of concessoes ?? []) {
+    const chave = linha.chave as string;
+    quantidadePorChave[chave] = (quantidadePorChave[chave] ?? 0) + 1;
+  }
+
+  const permissoes = (catalogo ?? []) as PermissaoCatalogo[];
 
   return (
     <>
@@ -47,6 +68,7 @@ export default async function PaginaConfiguracoes() {
             <Metrica rotulo="legalizacao_empresas" valor={empresas ?? 0} />
             <Metrica rotulo="dados_administrativos" valor={administrativos ?? 0} confidencial />
             <Metrica rotulo="profiles" valor={usuarios ?? 0} />
+            <Metrica rotulo="atribuicoes" valor={atribuicoes ?? 0} />
             <Metrica rotulo="audit_logs" valor={eventos ?? 0} />
           </div>
         </Cartao>
@@ -56,55 +78,74 @@ export default async function PaginaConfiguracoes() {
             titulo={
               <span className="flex items-center gap-2">
                 <ShieldCheck className="h-4 w-4 text-marca-600" />
-                Matriz de permissões
+                Catálogo de permissões
               </span>
             }
-            descricao="Regras aplicadas por Row Level Security no PostgreSQL."
+            descricao="O que existe para conceder e quantos usuários já receberam. Administradores têm tudo pelo papel e não entram nesta contagem."
           />
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-sm">
-              <thead>
-                <tr className="border-b border-borda bg-superficie text-left">
-                  <th className="px-5 py-2.5 text-xs font-semibold uppercase tracking-wide text-texto-suave">
-                    Recurso
-                  </th>
-                  <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-texto-suave">
-                    Admin
-                  </th>
-                  <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-texto-suave">
-                    Gestor Legalização
-                  </th>
-                  <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-texto-suave">
-                    Colaborador Legalização
-                  </th>
-                  <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-texto-suave">
-                    Outras áreas
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-borda">
-                {[
-                  ['Ler base geral', true, true, true, false],
-                  ['Criar / editar empresas', true, true, true, false],
-                  ['Excluir empresas', true, true, false, false],
-                  ['Ler dados administrativos', true, false, false, false],
-                  ['Editar dados administrativos', true, false, false, false],
-                  ['Exportar colunas ADM', true, false, false, false],
-                  ['Gerenciar usuários', true, false, false, false],
-                  ['Consultar auditoria', true, false, false, false],
-                ].map(([recurso, ...valores]) => (
-                  <tr key={String(recurso)} className="hover:bg-superficie">
-                    <td className="px-5 py-2.5 font-medium text-texto">{String(recurso)}</td>
-                    {valores.map((permitido, indice) => (
-                      <td key={indice} className="px-4 py-2.5">
-                        <Selo tom={permitido ? 'sucesso' : 'erro'}>{permitido ? 'Sim' : 'Não'}</Selo>
-                      </td>
-                    ))}
+          {permissoes.length === 0 ? (
+            <p className="px-5 py-6 text-sm leading-relaxed text-texto-suave">
+              Nenhuma permissão cadastrada. Rode <code className="font-mono">npm run
+              migrations:juntar</code> e aplique o arquivo gerado no SQL Editor do Supabase —
+              a tabela <code className="font-mono">permissoes_catalogo</code> nasce na migration
+              0010.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[640px] text-sm">
+                <thead>
+                  <tr className="border-b border-borda bg-superficie text-left">
+                    <th className="px-5 py-2.5 text-xs font-semibold uppercase tracking-wide text-texto-suave">
+                      Permissão
+                    </th>
+                    <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-texto-suave">
+                      Chave
+                    </th>
+                    <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-texto-suave">
+                      Grupo
+                    </th>
+                    <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-texto-suave">
+                      Concedida a
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-borda">
+                  {permissoes.map((permissao) => (
+                    <tr key={permissao.chave} className="hover:bg-superficie">
+                      <td className="px-5 py-2.5">
+                        <span className="flex items-center gap-1.5 font-medium text-texto">
+                          {permissao.rotulo}
+                          {permissao.somente_admin && <Selo tom="alerta">só admin</Selo>}
+                        </span>
+                        {permissao.descricao && (
+                          <span className="mt-0.5 block text-xs text-texto-suave">
+                            {permissao.descricao}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 font-mono text-xs text-texto-suave">
+                        {permissao.chave}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <Selo>{permissao.grupo}</Selo>
+                      </td>
+                      <td className="px-4 py-2.5 tabular-nums text-texto-suave">
+                        {permissao.somente_admin
+                          ? '—'
+                          : `${quantidadePorChave[permissao.chave] ?? 0} usuário(s)`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="border-t border-borda px-5 py-3 text-xs leading-relaxed text-texto-suave">
+            As permissões marcadas como <strong>só admin</strong> não podem ser concedidas a
+            nenhuma outra função: o gatilho{' '}
+            <code className="font-mono">proteger_permissoes_de_admin</code> recusa a gravação no
+            PostgreSQL, independentemente do que a interface envie.
+          </p>
         </Cartao>
 
         <div className="grid gap-4 lg:grid-cols-2">
@@ -138,7 +179,7 @@ export default async function PaginaConfiguracoes() {
 
           <div className="space-y-4">
             <Cartao>
-              <CabecalhoCartao titulo="Áreas disponíveis" />
+              <CabecalhoCartao titulo="Times" descricao="Agrupamento operacional de cada usuário." />
               <ul className="divide-y divide-borda text-sm">
                 {AREAS.map((area) => (
                   <li key={area.valor} className="flex items-center justify-between px-5 py-2.5">
@@ -150,7 +191,10 @@ export default async function PaginaConfiguracoes() {
             </Cartao>
 
             <Cartao>
-              <CabecalhoCartao titulo="Funções" />
+              <CabecalhoCartao
+                titulo="Funções"
+                descricao="A função não decide mais o acesso — só admin é especial. O resto vem dos checkboxes."
+              />
               <ul className="divide-y divide-borda text-sm">
                 {ROLES.map((role) => (
                   <li key={role.valor} className="px-5 py-2.5">
