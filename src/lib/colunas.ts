@@ -9,10 +9,14 @@
  * que só existem na resposta da API quando o usuário é admin (garantido por RLS).
  */
 
+import type { FormatoFormula, PlanilhaColuna, TabelaPlanilha } from '@/types/banco';
+
 export type TipoColuna =
   | 'texto' | 'data' | 'numero' | 'moeda' | 'cnpj' | 'status' | 'booleano' | 'longo'
-  /** Contador de processos abertos, com atalho para o Controle Geral. */
-  | 'processos';
+  /** Contador de processos abertos, com atalho para o Controle Legalização. */
+  | 'processos'
+  /** Coluna calculada por fórmula (criada pela equipe). */
+  | 'formula';
 
 export interface DefinicaoColuna {
   /** Chave do campo. Para confidenciais, o caminho dentro de `administrativo`. */
@@ -31,6 +35,20 @@ export interface DefinicaoColuna {
   padrao?: boolean;
   /** Congelada à esquerda (identificação da empresa). */
   fixa?: boolean;
+
+  /** Criada pela equipe: o valor mora em `campos_extras`. */
+  personalizada?: boolean;
+  /** Tabela onde a coluna da equipe guarda o valor. */
+  tabela?: TabelaPlanilha;
+  /** Expressão no estilo do Excel (tipo 'formula'). */
+  formula?: string | null;
+  /** Como exibir o resultado da fórmula. */
+  formato?: FormatoFormula;
+  descricao?: string | null;
+  /** Escondida para o time inteiro por quem gerencia as colunas. */
+  ocultaParaTodos?: boolean;
+  /** Id em `planilha_colunas` (colunas da equipe e ajustes de nativas). */
+  definicaoId?: string;
 }
 
 const SIM_NAO = ['SIM', 'NÃO', 'NA'];
@@ -66,9 +84,9 @@ export const COLUNAS_GERAIS: DefinicaoColuna[] = [
   { campo: 'validade', rotulo: 'Validade RT', tipo: 'status', largura: 120, origem: 'Saúde: VALIDADE', editavel: true, padrao: true },
   { campo: 'validade_data', rotulo: 'Validade RT (data)', tipo: 'data', largura: 150, origem: 'Saúde: VALIDADE (datas)', editavel: true, padrao: false },
   { campo: 'observacoes', rotulo: 'Observações', tipo: 'longo', largura: 260, origem: 'PortalMPC', editavel: true, padrao: false },
-  // Aviso vindo do Controle Geral. Não é editável aqui: o número sai do
-  // gatilho que conta os processos abertos daquela empresa.
-  { campo: 'processos_abertos', rotulo: 'Processos', tipo: 'processos', largura: 130, origem: 'Controle Geral', editavel: false, padrao: true },
+  // Aviso vindo do Controle Legalização. Não é editável aqui: o número sai
+  // do gatilho que conta os processos abertos daquela empresa.
+  { campo: 'processos_abertos', rotulo: 'Processos', tipo: 'processos', largura: 130, origem: 'Controle Legalização', editavel: false, padrao: true },
   { campo: 'origem', rotulo: 'Origem', tipo: 'status', largura: 140, origem: 'Rastreabilidade da importação', editavel: false, padrao: true },
   { campo: 'necessita_revisao', rotulo: 'Revisão', tipo: 'booleano', largura: 100, origem: 'Validação automática', editavel: true, padrao: true },
   { campo: 'revisao_motivo', rotulo: 'Motivo da revisão', tipo: 'longo', largura: 260, origem: 'Validação automática', editavel: false, padrao: false },
@@ -105,3 +123,102 @@ export const CAMPOS_EDITAVEIS_GERAIS = COLUNAS_GERAIS.filter((c) => c.editavel).
 export const CAMPOS_EDITAVEIS_ADMINISTRATIVOS = COLUNAS_ADMINISTRATIVAS.filter((c) => c.editavel).map(
   (c) => c.campo,
 );
+
+/* -------------------------------------------------------------------------- */
+/* Colunas da equipe (planilha_colunas)                                        */
+/* -------------------------------------------------------------------------- */
+
+const LARGURA_POR_TIPO: Partial<Record<TipoColuna, number>> = {
+  data: 120,
+  numero: 110,
+  moeda: 130,
+  booleano: 100,
+  longo: 260,
+};
+
+/** Tipo da coluna da equipe → tipo usado pela planilha. */
+function tipoDaDefinicao(def: PlanilhaColuna): TipoColuna {
+  switch (def.tipo) {
+    case 'formula':
+      return 'formula';
+    case 'numero':
+    case 'moeda':
+    case 'data':
+    case 'status':
+    case 'booleano':
+    case 'longo':
+      return def.tipo;
+    default:
+      return 'texto';
+  }
+}
+
+/** Converte uma linha de `planilha_colunas` em definição da planilha. */
+export function colunaDaEquipe(def: PlanilhaColuna): DefinicaoColuna {
+  const tipo = tipoDaDefinicao(def);
+  return {
+    campo: def.campo,
+    rotulo: def.rotulo,
+    tipo,
+    largura: def.largura || LARGURA_POR_TIPO[tipo] || 160,
+    origem: def.descricao ?? (tipo === 'formula' ? `Fórmula: ${def.formula}` : 'Coluna criada pela equipe'),
+    editavel: tipo !== 'formula',
+    confidencial: def.tabela === 'legalizacao_dados_administrativos',
+    opcoes: def.opcoes?.length ? def.opcoes : undefined,
+    padrao: !def.oculta,
+    personalizada: true,
+    tabela: def.tabela,
+    formula: def.formula,
+    formato: def.formato,
+    descricao: def.descricao,
+    ocultaParaTodos: def.oculta,
+    definicaoId: def.id,
+  };
+}
+
+/**
+ * Junta as colunas nativas com o que a equipe configurou: renomeações e
+ * ocultações das nativas (`personalizada = false`) e as colunas novas, que
+ * entram no fim, na ordem definida.
+ */
+export function mesclarColunas(nativas: DefinicaoColuna[], definicoes: PlanilhaColuna[]): DefinicaoColuna[] {
+  const ajustes = new Map(definicoes.filter((d) => !d.personalizada).map((d) => [`${d.tabela}:${d.campo}`, d]));
+
+  const ajustadas = nativas.map((coluna) => {
+    const tabela = coluna.confidencial ? 'legalizacao_dados_administrativos' : 'legalizacao_empresas';
+    const ajuste = ajustes.get(`${tabela}:${coluna.campo}`);
+    if (!ajuste) return coluna;
+    return {
+      ...coluna,
+      rotulo: ajuste.rotulo || coluna.rotulo,
+      largura: ajuste.largura || coluna.largura,
+      ocultaParaTodos: ajuste.oculta,
+      padrao: ajuste.oculta ? false : coluna.padrao,
+      definicaoId: ajuste.id,
+    };
+  });
+
+  const daEquipe = definicoes
+    .filter((d) => d.personalizada)
+    .sort((a, b) => a.ordem - b.ordem || a.rotulo.localeCompare(b.rotulo, 'pt-BR'))
+    .map(colunaDaEquipe);
+
+  return [...ajustadas, ...daEquipe];
+}
+
+/** Nome técnico a partir do rótulo: "Validade do Alvará" → "validade_do_alvara". */
+export function campoAPartirDoRotulo(rotulo: string, existentes: string[]): string {
+  // O prefixo "x_" impede colisão com as colunas nativas (status, cidade…).
+  const slug = rotulo
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 48);
+  const base = `x_${slug || 'coluna'}`;
+  let campo = base;
+  let n = 2;
+  while (existentes.includes(campo)) campo = `${base}_${n++}`;
+  return campo;
+}

@@ -1,22 +1,24 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
+  Bell,
   Building2,
   Calculator,
   CalendarCheck,
+  CalendarDays,
   ChevronLeft,
   ClipboardList,
   FileSpreadsheet,
-  FileStack,
+  Handshake,
   Home,
   LayoutDashboard,
   Link2,
   LogOut,
-  Menu,
+  MessagesSquare,
   Receipt,
   ScrollText,
   Settings,
@@ -37,8 +39,9 @@ interface ItemMenu {
   href: string;
   icone: typeof Home;
   /** Permissão exigida — a mesma chave que o admin marca no checkbox. */
+  /** Vazio = livre para quem tem sessão (ex.: notificações). */
   permissao: string;
-  grupo: 'principal' | 'administracao' | 'areas' | 'conta';
+  grupo: 'principal' | 'legalizacao' | 'rotina' | 'administracao' | 'areas' | 'conta';
   selo?: string;
 }
 
@@ -48,13 +51,18 @@ interface ItemMenu {
  */
 const ITENS: ItemMenu[] = [
   { rotulo: 'Início', href: '/inicio', icone: Home, grupo: 'principal', permissao: PERMISSOES.telaInicio },
+  { rotulo: 'Notificações', href: '/notificacoes', icone: Bell, grupo: 'principal', permissao: '' },
   { rotulo: 'Dashboard', href: '/dashboard', icone: LayoutDashboard, grupo: 'principal', permissao: PERMISSOES.telaDashboard },
-  { rotulo: 'Planilha Legalização', href: '/legalizacao', icone: FileSpreadsheet, grupo: 'principal', permissao: PERMISSOES.telaLegalizacao },
-  { rotulo: 'Controle Geral', href: '/controle-geral', icone: ClipboardList, grupo: 'principal', permissao: PERMISSOES.telaProcessos },
-  { rotulo: 'Planilha ADM', href: '/administrativo', icone: Receipt, grupo: 'principal', permissao: PERMISSOES.telaAdministrativo, selo: 'Restrito' },
-  { rotulo: 'Atribuições', href: '/atribuicoes', icone: CalendarCheck, grupo: 'principal', permissao: PERMISSOES.telaAtribuicoes },
-  { rotulo: 'Consultas por cidade', href: '/referencias', icone: Link2, grupo: 'principal', permissao: PERMISSOES.telaReferencias },
-  { rotulo: 'Importações', href: '/importacoes', icone: FileStack, grupo: 'principal', permissao: PERMISSOES.telaImportacoes },
+  { rotulo: 'Fórum da Meta', href: '/forum', icone: MessagesSquare, grupo: 'principal', permissao: PERMISSOES.telaForum },
+
+  { rotulo: 'Planilha Legalização', href: '/legalizacao', icone: FileSpreadsheet, grupo: 'legalizacao', permissao: PERMISSOES.telaLegalizacao },
+  { rotulo: 'Controle Legalização', href: '/controle-legalizacao', icone: ClipboardList, grupo: 'legalizacao', permissao: PERMISSOES.telaProcessos },
+  { rotulo: 'Planilha ADM', href: '/administrativo', icone: Receipt, grupo: 'legalizacao', permissao: PERMISSOES.telaAdministrativo, selo: 'Restrito' },
+  { rotulo: 'Consultas por cidade', href: '/referencias', icone: Link2, grupo: 'legalizacao', permissao: PERMISSOES.telaReferencias },
+
+  { rotulo: 'Calendário de Obrigações', href: '/calendario', icone: CalendarDays, grupo: 'rotina', permissao: PERMISSOES.telaCalendario },
+  { rotulo: 'Integração de Clientes', href: '/integracao-clientes', icone: Handshake, grupo: 'rotina', permissao: PERMISSOES.telaIntegracao },
+  { rotulo: 'Atribuições', href: '/atribuicoes', icone: CalendarCheck, grupo: 'rotina', permissao: PERMISSOES.telaAtribuicoes },
 
   { rotulo: 'Usuários', href: '/usuarios', icone: Users, grupo: 'administracao', permissao: PERMISSOES.gerenciarUsuarios },
   { rotulo: 'Auditoria', href: '/auditoria', icone: ScrollText, grupo: 'administracao', permissao: PERMISSOES.telaAuditoria },
@@ -65,38 +73,59 @@ const ITENS: ItemMenu[] = [
   { rotulo: 'Departamento Pessoal', href: '/departamento-pessoal', icone: Users, grupo: 'areas', permissao: PERMISSOES.telaDp },
 ];
 
+/** Itens do menu que a pessoa pode abrir — usado também pela busca global. */
+export function itensDoMenu(perfil: PerfilComPermissoes): { rotulo: string; href: string }[] {
+  return ITENS.filter((item) => !item.permissao || pode(perfil, item.permissao)).map(({ rotulo, href }) => ({ rotulo, href }));
+}
+
 const TITULOS_GRUPO: Record<ItemMenu['grupo'], string | null> = {
   principal: null,
+  legalizacao: 'Legalização',
+  rotina: 'Rotina',
   administracao: 'Administração',
   areas: 'Outras áreas',
   conta: 'Conta',
 };
+
+/** A barra superior abre o menu no celular por este evento. */
+export const EVENTO_ABRIR_MENU = 'portalmpc:abrir-menu';
 
 export function MenuLateral({
   perfil,
   avisos = {},
 }: {
   perfil: PerfilComPermissoes;
-  /** Contagem por rota, ex.: `{ '/controle-geral': 3 }` para processos atrasados. */
+  /** Contagem por rota, ex.: `{ '/controle-legalizacao': 3 }` para processos atrasados. */
   avisos?: Record<string, number>;
 }) {
   const [abertoMobile, setAbertoMobile] = useState(false);
   const [recolhido, setRecolhido] = useState(false);
 
+  // Lembra se a pessoa prefere o menu recolhido.
+  useEffect(() => {
+    try {
+      setRecolhido(localStorage.getItem('portalmpc:menu-recolhido') === '1');
+    } catch {
+      /* navegador sem armazenamento: segue aberto */
+    }
+    const abrir = () => setAbertoMobile(true);
+    window.addEventListener(EVENTO_ABRIR_MENU, abrir);
+    return () => window.removeEventListener(EVENTO_ABRIR_MENU, abrir);
+  }, []);
+
+  function alternarRecolhido() {
+    setRecolhido((v) => {
+      try {
+        localStorage.setItem('portalmpc:menu-recolhido', v ? '0' : '1');
+      } catch {
+        /* sem armazenamento */
+      }
+      return !v;
+    });
+  }
+
   return (
     <>
-      {/* Barra superior — apenas em telas pequenas */}
-      <header className="sem-impressao sticky top-0 z-30 flex h-14 items-center justify-between border-b border-borda bg-superficie-elevada px-4 lg:hidden">
-        <MarcaMPC tamanho="sm" />
-        <button
-          onClick={() => setAbertoMobile(true)}
-          className="rounded-lg p-2 text-texto-suave transition-colors hover:bg-superficie"
-          aria-label="Abrir menu"
-        >
-          <Menu className="h-5 w-5" />
-        </button>
-      </header>
-
       {abertoMobile && (
         <div
           className="fixed inset-0 z-40 bg-slate-900/40 lg:hidden"
@@ -131,7 +160,7 @@ export function MenuLateral({
           </button>
 
           <button
-            onClick={() => setRecolhido((v) => !v)}
+            onClick={alternarRecolhido}
             className={cn(
               'hidden rounded-lg p-1.5 text-texto-fraco transition-colors hover:bg-superficie hover:text-texto lg:block',
               recolhido && 'absolute right-1.5',
@@ -143,9 +172,9 @@ export function MenuLateral({
         </div>
 
         <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4" aria-label="Menu principal">
-          {(['principal', 'administracao', 'areas'] as const).map((grupo) => {
+          {(['principal', 'legalizacao', 'rotina', 'administracao', 'areas'] as const).map((grupo) => {
             const itens = ITENS.filter(
-              (item) => item.grupo === grupo && pode(perfil, item.permissao),
+              (item) => item.grupo === grupo && (!item.permissao || pode(perfil, item.permissao)),
             );
             if (itens.length === 0) return null;
 
@@ -210,7 +239,7 @@ function ItemNavegacao({
 }: {
   item: ItemMenu;
   recolhido: boolean;
-  /** Pendência que merece atenção — hoje, processos com prazo vencido. */
+  /** Pendência que merece atenção: processos atrasados, notificações não lidas. */
   aviso?: number;
   aoNavegar: () => void;
 }) {
@@ -222,7 +251,7 @@ function ItemNavegacao({
     <Link
       href={item.href}
       onClick={aoNavegar}
-      title={recolhido ? `${item.rotulo}${aviso > 0 ? ` — ${aviso} em atraso` : ''}` : undefined}
+      title={recolhido ? `${item.rotulo}${aviso > 0 ? ` — ${aviso} pendente(s)` : ''}` : undefined}
       aria-current={ativo ? 'page' : undefined}
       className={cn(
         'group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
@@ -243,7 +272,7 @@ function ItemNavegacao({
           {aviso > 0 && (
             <span
               className="shrink-0 rounded-full bg-erro px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-white"
-              title={`${aviso} com prazo vencido`}
+              title={`${aviso} pendente(s)`}
             >
               {aviso > 99 ? '99+' : aviso}
             </span>

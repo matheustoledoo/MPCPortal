@@ -18,6 +18,7 @@ import {
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
   type ReactNode,
+  type Ref,
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from 'react';
@@ -27,6 +28,7 @@ import { cn } from '@/lib/cn';
 
 export { cn };
 export { Combo, type PropsCombo } from '@/components/ui/Combo';
+export { Popover } from '@/components/ui/Popover';
 
 /* -------------------------------------------------------------------------- */
 /* Botão                                                                       */
@@ -56,6 +58,8 @@ export interface PropsBotao extends ButtonHTMLAttributes<HTMLButtonElement> {
   variante?: VarianteBotao;
   tamanho?: TamanhoBotao;
   carregando?: boolean;
+  /** React 19 entrega `ref` como prop comum: serve de âncora para menus. */
+  ref?: Ref<HTMLButtonElement>;
 }
 
 export function Botao({
@@ -65,10 +69,12 @@ export function Botao({
   className,
   children,
   disabled,
+  ref,
   ...resto
 }: PropsBotao) {
   return (
     <button
+      ref={ref}
       className={cn(
         'inline-flex items-center rounded-lg font-medium transition-colors',
         'disabled:cursor-not-allowed disabled:opacity-60',
@@ -303,7 +309,7 @@ export function Modal({
   descricao?: ReactNode;
   children?: ReactNode;
   rodape?: ReactNode;
-  largura?: 'sm' | 'md' | 'lg';
+  largura?: 'sm' | 'md' | 'lg' | 'xl';
 }) {
   useEffect(() => {
     if (!aberto) return;
@@ -321,7 +327,7 @@ export function Modal({
 
   if (!aberto) return null;
 
-  const larguras = { sm: 'max-w-md', md: 'max-w-xl', lg: 'max-w-3xl' };
+  const larguras = { sm: 'max-w-md', md: 'max-w-xl', lg: 'max-w-3xl', xl: 'max-w-6xl' };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">

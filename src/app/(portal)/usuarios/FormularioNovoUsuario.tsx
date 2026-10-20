@@ -28,11 +28,17 @@ const TITULOS_GRUPO: Record<string, string> = {
  * permissões.
  */
 function sugestaoPara(area: Area, role: Role): string[] {
-  const comuns = [PERMISSOES.telaInicio as string, PERMISSOES.telaAtribuicoes as string];
+  const comuns = [
+    PERMISSOES.telaInicio as string,
+    PERMISSOES.telaAtribuicoes as string,
+    PERMISSOES.telaForum as string,
+    PERMISSOES.telaCalendario as string,
+  ];
 
   const porArea: Record<Area, string[]> = {
     legalizacao: [
       PERMISSOES.telaLegalizacao,
+      PERMISSOES.telaProcessos,
       PERMISSOES.telaReferencias,
       PERMISSOES.editarEmpresas,
       PERMISSOES.exportarLegalizacao,
@@ -40,6 +46,7 @@ function sugestaoPara(area: Area, role: Role): string[] {
     fiscal: [PERMISSOES.telaFiscal],
     contabil: [PERMISSOES.telaContabil],
     departamento_pessoal: [PERMISSOES.telaDp],
+    qualidade: [PERMISSOES.telaIntegracao],
     administracao: [PERMISSOES.telaDashboard],
   };
 
