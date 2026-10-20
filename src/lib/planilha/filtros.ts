@@ -306,13 +306,22 @@ export function ordenarLinhas(
   });
 }
 
-/** Para o filtro chegar pronto pela URL: `?f.cidade=Jundiaí`. */
+/**
+ * Para o filtro chegar pronto pela URL:
+ *  - `?f.cidade=Jundiaí` marca exatamente esse valor (filtro por valores);
+ *  - `?fc.cidade=jundiai` usa "é igual a", sem diferenciar acento e caixa —
+ *    útil quando a base grafa o nome de outro jeito (JUNDIAÍ, Jundiai…).
+ */
 export function filtrosDaUrl(parametros: Record<string, string | string[] | undefined>): Record<string, FiltroDeColuna> {
   const filtros: Record<string, FiltroDeColuna> = {};
   for (const [chave, valor] of Object.entries(parametros)) {
-    if (!chave.startsWith('f.') || valor === undefined) continue;
-    const valores = (Array.isArray(valor) ? valor : [valor]).map((v) => (v === ROTULO_VAZIAS ? '' : v));
-    filtros[chave.slice(2)] = { valores };
+    if (valor === undefined) continue;
+    const lista = Array.isArray(valor) ? valor : [valor];
+    if (chave.startsWith('f.')) {
+      filtros[chave.slice(2)] = { valores: lista.map((v) => (v === ROTULO_VAZIAS ? '' : v)) };
+    } else if (chave.startsWith('fc.') && lista[0]) {
+      filtros[chave.slice(3)] = { condicao: { operador: 'igual', valor: lista[0] } };
+    }
   }
   return filtros;
 }
