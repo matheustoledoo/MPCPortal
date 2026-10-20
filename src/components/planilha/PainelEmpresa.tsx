@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 
-import { Lock, Save, X } from 'lucide-react';
+import Link from 'next/link';
+import { CalendarDays, ClipboardList, Handshake, Lock, Save, X } from 'lucide-react';
 
 import { AreaTexto, Botao, Campo, Selecao, Selo, cn, useAvisos } from '@/components/ui';
 import { COLUNAS_ADMINISTRATIVAS, COLUNAS_GERAIS, type DefinicaoColuna } from '@/lib/colunas';
@@ -13,6 +14,13 @@ import { textoDaCelula, type LinhaPlanilha, type ResultadoFormula } from '@/lib/
 
 /** Chave do estado do formulário para as colunas da equipe. */
 const chaveExtra = (coluna: DefinicaoColuna) => `extra:${coluna.confidencial ? 'adm' : 'geral'}:${coluna.campo}`;
+
+/** Telas ligadas à empresa que a pessoa pode abrir. */
+export interface AtalhosEmpresa {
+  processos?: boolean;
+  integracao?: boolean;
+  calendario?: boolean;
+}
 
 /**
  * Formulário lateral para criar ou editar uma empresa por completo.
@@ -26,6 +34,7 @@ export function PainelEmpresa({
   colunasEditaveis = [],
   colunasEquipe = [],
   resultadosFormula,
+  atalhos = {},
   aoFechar,
   aoSalvar,
 }: {
@@ -39,6 +48,7 @@ export function PainelEmpresa({
   /** Colunas criadas pela equipe (inclusive as de fórmula, só leitura). */
   colunasEquipe?: DefinicaoColuna[];
   resultadosFormula?: Record<string, ResultadoFormula>;
+  atalhos?: AtalhosEmpresa;
   aoFechar: () => void;
   aoSalvar: (
     gerais: Record<string, unknown>,
@@ -233,6 +243,35 @@ export function PainelEmpresa({
             <X className="h-4 w-4" />
           </button>
         </header>
+
+        {empresa && (atalhos.processos || atalhos.integracao || atalhos.calendario) && (
+          <nav className="flex flex-wrap gap-2 border-b border-borda px-5 py-2.5" aria-label="Atalhos da empresa">
+            {atalhos.processos && (
+              <Link
+                href={`/controle-legalizacao?empresa=${empresa.id}`}
+                className="inline-flex items-center gap-1.5 rounded-full bg-superficie px-3 py-1 text-xs font-medium text-texto-suave ring-1 ring-inset ring-borda hover:text-marca-800 hover:ring-marca-300"
+              >
+                <ClipboardList className="h-3.5 w-3.5" /> Processos
+              </Link>
+            )}
+            {atalhos.integracao && (
+              <Link
+                href={`/integracao-clientes?empresa=${empresa.id}`}
+                className="inline-flex items-center gap-1.5 rounded-full bg-superficie px-3 py-1 text-xs font-medium text-texto-suave ring-1 ring-inset ring-borda hover:text-marca-800 hover:ring-marca-300"
+              >
+                <Handshake className="h-3.5 w-3.5" /> Integração do cliente
+              </Link>
+            )}
+            {atalhos.calendario && (
+              <Link
+                href="/calendario?aba=lista"
+                className="inline-flex items-center gap-1.5 rounded-full bg-superficie px-3 py-1 text-xs font-medium text-texto-suave ring-1 ring-inset ring-borda hover:text-marca-800 hover:ring-marca-300"
+              >
+                <CalendarDays className="h-3.5 w-3.5" /> Calendário
+              </Link>
+            )}
+          </nav>
+        )}
 
         {podeVerAdministrativo && (
           <div className="flex gap-1 border-b border-borda px-5 pt-3">

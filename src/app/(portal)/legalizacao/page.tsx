@@ -70,6 +70,11 @@ export default async function PaginaLegalizacao({
         podeExportar={pode(perfil, PERMISSOES.exportarLegalizacao)}
         podeImportar={pode(perfil, PERMISSOES.importarLegalizacao)}
         podePersonalizarColunas={pode(perfil, PERMISSOES.personalizarColunas)}
+        atalhos={{
+          processos: pode(perfil, PERMISSOES.telaProcessos),
+          integracao: pode(perfil, PERMISSOES.telaIntegracao),
+          calendario: pode(perfil, PERMISSOES.telaCalendario),
+        }}
         colunasEditaveis={minhasColunas}
         responsaveisPorColuna={responsaveis}
         definicoesIniciais={configuracao.definicoes}

@@ -32,7 +32,7 @@ import { DialogoOrdenacao } from '@/components/planilha/DialogoOrdenacao';
 import { EditorColuna, type DadosColuna } from '@/components/planilha/EditorColuna';
 import { MenuColuna } from '@/components/planilha/MenuColuna';
 import { PainelColunas } from '@/components/planilha/PainelColunas';
-import { PainelEmpresa } from '@/components/planilha/PainelEmpresa';
+import { PainelEmpresa, type AtalhosEmpresa } from '@/components/planilha/PainelEmpresa';
 import {
   Botao,
   Campo,
@@ -117,6 +117,7 @@ export function TabelaPlanilha({
   definicoesIniciais = [],
   preferenciasIniciais = null,
   parametros = {},
+  atalhos = {},
 }: {
   contexto: 'legalizacao' | 'administrativo';
   podeVerAdministrativo: boolean;
@@ -133,6 +134,8 @@ export function TabelaPlanilha({
   definicoesIniciais?: PlanilhaColuna[];
   preferenciasIniciais?: PreferenciasPlanilha | null;
   parametros?: ParametrosIniciais;
+  /** Telas ligadas à empresa que a pessoa pode abrir (atalhos no painel). */
+  atalhos?: AtalhosEmpresa;
 }) {
   const { avisar } = useAvisos();
   const supabase = useMemo(() => criarClienteNavegador(), []);
@@ -1081,6 +1084,7 @@ export function TabelaPlanilha({
         colunasEditaveis={colunasEditaveis}
         colunasEquipe={colunas.filter((c) => c.personalizada)}
         resultadosFormula={empresaNoPainel ? formulas.get(empresaNoPainel.id) : undefined}
+        atalhos={atalhos}
         aoFechar={() => {
           setPainelAberto(false);
           setEmpresaNoPainel(null);

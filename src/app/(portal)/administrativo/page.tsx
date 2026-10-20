@@ -6,7 +6,7 @@ import { CabecalhoPagina } from '@/components/layout/CabecalhoPagina';
 import { TabelaPlanilha } from '@/components/planilha/TabelaPlanilha';
 import { Selo } from '@/components/ui';
 import { responsaveisPorColuna } from '@/lib/atribuicoes';
-import { ehAdmin, rotuloPeriodicidade } from '@/lib/permissoes';
+import { PERMISSOES, ehAdmin, pode, rotuloPeriodicidade } from '@/lib/permissoes';
 import { carregarConfiguracaoPlanilha, parametrosDaPlanilha } from '@/lib/planilha/servidor';
 import { criarClienteServidor, obterPerfilAtual } from '@/lib/supabase/server';
 
@@ -68,6 +68,11 @@ export default async function PaginaAdministrativo({
         podeExcluir
         podeImportar
         podePersonalizarColunas
+        atalhos={{
+          processos: pode(perfil, PERMISSOES.telaProcessos),
+          integracao: pode(perfil, PERMISSOES.telaIntegracao),
+          calendario: pode(perfil, PERMISSOES.telaCalendario),
+        }}
         responsaveisPorColuna={responsaveis}
         definicoesIniciais={configuracao.definicoes}
         preferenciasIniciais={configuracao.preferencias}
