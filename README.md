@@ -521,6 +521,9 @@ Ajuste tudo pela tela **Usuários**.
 | "Chave do Supabase inválida" | `NEXT_PUBLIC_SUPABASE_ANON_KEY` errada ou ausente | Confira o `.env.local` |
 | "A sessão não pôde ser salva" | Navegador bloqueando cookies de `localhost` | Libere cookies para o site |
 | Entra e volta para o login, com `AuthRetryableFetchError: fetch failed` no terminal | Rede corporativa com inspeção de TLS: o Node não confia no certificado da empresa | Suba com `$env:NODE_OPTIONS="--use-system-ca"` (veja abaixo) |
+| `npm install` falha com `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` em `cdn.sheetjs.com` | Mesma inspeção de TLS — o `xlsx` vem do CDN oficial da SheetJS | `$env:NODE_OPTIONS="--use-system-ca"` e rode `npm install` de novo |
+| Build: `Module not found: Can't resolve 'xlsx'` | Dependência nova ainda não instalada | `npm install` antes do `npm run build` |
+| Build: `EINVAL: invalid argument, readlink ...\.next\...` | Projeto dentro do **OneDrive**: o OneDrive transforma os arquivos de `.next` em atalhos de nuvem | Apague a pasta `.next` e rode o build de novo; de vez: mova o projeto para fora do OneDrive (ex.: `C:\dev\MPCPortal`) |
 
 #### Rede corporativa (proxy com inspeção de TLS)
 
@@ -530,9 +533,12 @@ o login autentica, mas o servidor não consegue validar a sessão — e o usuár
 volta para a tela de login.
 
 ```powershell
-# PowerShell — Node 22 ou superior
+# PowerShell — Node 22 ou superior (vale para npm install, build e start)
 $env:NODE_OPTIONS="--use-system-ca"
 npm run start
+
+# Para não precisar repetir em cada terminal novo:
+setx NODE_OPTIONS "--use-system-ca"
 ```
 
 ```powershell
