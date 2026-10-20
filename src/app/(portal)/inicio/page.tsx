@@ -22,8 +22,9 @@ import {
 import { NotificacoesInicio } from '@/app/(portal)/inicio/NotificacoesInicio';
 import { MinhasAtribuicoes } from '@/components/atribuicoes/MinhasAtribuicoes';
 import { CabecalhoPagina } from '@/components/layout/CabecalhoPagina';
-import { Cartao, CabecalhoCartao, Selo, cn } from '@/components/ui';
+import { Cartao, CabecalhoCartao, Selo } from '@/components/ui';
 import { COR_CATEGORIA, br } from '@/lib/calendario';
+import { cn } from '@/lib/cn';
 import { COLUNAS_GERAIS } from '@/lib/colunas';
 import { PERMISSOES, pode, podeLerLegalizacao, rotuloArea, rotuloRole } from '@/lib/permissoes';
 import { buscarProcessos, diasAtePrazo } from '@/lib/processos';

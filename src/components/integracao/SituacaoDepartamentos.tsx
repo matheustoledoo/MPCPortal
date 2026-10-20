@@ -1,6 +1,6 @@
 import { Check, Circle, CircleDot } from 'lucide-react';
 
-import { cn } from '@/components/ui';
+import { cn } from '@/lib/cn';
 import { INTEG_DEPTS, tituloDepartamento, type DepartamentoIntegracao } from '@/lib/integracao';
 import type { ResumoIntegracao } from '@/types/banco';
 

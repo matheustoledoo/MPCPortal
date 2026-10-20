@@ -1,17 +1,19 @@
 # PortalMPC
 
-Sistema interno de gestão da **Meta Plano Contábil**. Esta primeira etapa entrega o
-**módulo de Legalização** completo — autenticação, controle de acesso modular por
-permissão, base de dados no Supabase, importação real das planilhas de trabalho e uma
-tela de edição no estilo planilha.
+Sistema interno de gestão da **Meta Plano Contábil**: autenticação, controle de acesso
+modular por permissão, base de dados no Supabase e as telas do dia a dia do escritório —
+a **Legalização** (base de clientes estilo Excel e Controle Legalização), o **Calendário de
+Obrigações** e a **Integração de Clientes** (trazidos do antigo Portal Meta Plano, do Apps
+Script), o **Fórum da Meta** e uma **central de notificações** que junta tudo.
 
 O administrador cria os usuários pela própria interface, define o time de cada um, marca
 em checkbox quais telas ele abre e o que pode alterar, e distribui responsabilidades
 recorrentes com prazo e aviso ("fulano atualiza a coluna Alvará todo mês").
 
 O time de Legalização trabalha em duas planilhas ligadas entre si: a **base de clientes** e o
-**Controle Geral**, que acompanha cada processo aberto num órgão com protocolo, prazo e
-responsável — e avisa na base quando uma empresa tem processo em andamento.
+**Controle Legalização** (antigo Controle Geral), que acompanha cada processo aberto num órgão
+com protocolo, prazo e responsável — e avisa na base quando uma empresa tem processo em
+andamento.
 
 A arquitetura já está preparada para os módulos Fiscal, Contábil e Departamento Pessoal.
 
@@ -24,10 +26,16 @@ A arquitetura já está preparada para os módulos Fiscal, Contábil e Departame
 - [Estrutura do projeto](#estrutura-do-projeto)
 - [Banco de dados](#banco-de-dados)
 - [Segurança e permissões](#segurança-e-permissões)
-- [Controle Geral](#controle-geral-a-aba-controle_geral-no-portal)
+- [Planilha estilo Excel](#planilha-estilo-excel-legalização-e-adm)
+- [Controle Legalização](#controle-legalização-a-aba-controle_geral-no-portal)
+- [Calendário de Obrigações](#calendário-de-obrigações)
+- [Integração de Clientes](#integração-de-clientes)
+- [Fórum da Meta](#fórum-da-meta)
+- [Notificações](#notificações)
 - [Atribuições](#atribuições-quem-faz-o-quê-e-até-quando)
 - [Importação das planilhas](#importação-das-planilhas)
 - [Usuários e acessos](#usuários-e-acessos)
+- [Importar do app antigo (Portal Meta Plano)](#importar-do-app-antigo-portal-meta-plano)
 - [Documentação complementar](#documentação-complementar)
 
 ---
@@ -68,7 +76,7 @@ Preencha `.env.local`:
 
 ### 4. Migrations
 
-As migrations `0001` a `0015` **já estão aplicadas** no projeto `MetaPlano`, recriado do zero
+As migrations `0001` a `0023` **já estão aplicadas** no projeto `MetaPlano`, recriado do zero
 em outubro/2026 a partir deste repositório. Nada a fazer para rodar contra este banco.
 
 Para um banco novo, ou para conferir o que existe:
@@ -104,6 +112,8 @@ npm run typecheck
 | Estilo | **Tailwind CSS 4** | Tokens de design em `globals.css`, sem CSS espalhado |
 | Banco / Auth | **Supabase** (PostgreSQL + Auth + RLS) | Permissão aplicada no banco, não só na tela |
 | Excel | **ExcelJS** | Leitura no ETL e geração da exportação no servidor |
+| Importar planilhas | **SheetJS** (`xlsx`, do CDN oficial) | Lê xlsx/xls/ods/csv **no navegador**: o arquivo não sai da máquina |
+| Tempo real | **Supabase Realtime** | Sino, fórum, calendário e integração atualizam sem recarregar |
 | Ícones | **lucide-react** | Conjunto consistente |
 | Marca | SVG em `public/` | Trocar a logo não exige mexer em código |
 
@@ -120,12 +130,16 @@ src/
 │   │   ├── inicio/               # painel dos demais perfis
 │   │   ├── legalizacao/          # Planilha Legalização (campos gerais)
 │   │   ├── administrativo/       # Planilha ADM (inclui bloco confidencial)
-│   │   ├── controle-geral/       # CONTROLE_GERAL: processos nos órgãos, com painéis
-│   │   ├── usuarios/             # criação de usuários, times e checkboxes de permissão
+│   │   ├── controle-legalizacao/ # processos nos órgãos (antigo Controle Geral), com painéis
+│   │   ├── controle-geral/       # só redireciona para /controle-legalizacao (links antigos)
+│   │   ├── calendario/           # Calendário de Obrigações (relatório PDF/Excel)
+│   │   ├── integracao-clientes/  # lista e roteiro de cada departamento
+│   │   ├── forum/                # Fórum da Meta: feed, conversa, perfis, equipe
+│   │   ├── notificacoes/         # central de notificações
+│   │   ├── usuarios/             # usuários, permissões e importador do app antigo
 │   │   ├── atribuicoes/          # quem cuida do quê, com que frequência e até quando
 │   │   ├── auditoria/            # trilha de alterações
-│   │   ├── importacoes/          # relatório da consolidação
-│   │   ├── referencias/          # portais das prefeituras e checklists
+│   │   ├── referencias/          # "Consultas por cidade": todos os municípios do Brasil
 │   │   ├── perfil/
 │   │   ├── configuracoes/
 │   │   └── fiscal|contabil|departamento-pessoal/   # módulos futuros
@@ -136,10 +150,12 @@ src/
 │   └── sem-acesso/
 ├── components/
 │   ├── ui/                       # design system (botão, campo, selo, modal, avisos)
-│   ├── layout/                   # menu lateral, cabeçalho, área em construção
+│   ├── layout/                   # menu lateral, barra superior, busca (Ctrl+K), sino
 │   ├── atribuicoes/              # bloco "minhas responsabilidades" da tela de início
-│   ├── processos/                # autocomplete de empresa e painéis do Controle Geral
-│   └── planilha/                 # tabela, célula editável, filtros, painel lateral
+│   ├── processos/                # autocomplete de empresa e painéis do Controle Legalização
+│   ├── planilha/                 # tabela estilo Excel, filtros por coluna, importação, colunas
+│   ├── forum/                    # post, compositor, lista, perfil, seguir
+│   └── integracao/               # selos de situação por departamento
 ├── lib/
 │   ├── supabase/                 # clientes de navegador e servidor
 │   ├── permissoes.ts             # ponto único de decisão de permissão no frontend
@@ -148,7 +164,12 @@ src/
 │   ├── colunas.ts                # catálogo de colunas (dirige tabela, form e export)
 │   ├── empresas.ts               # acesso a dados da base de Legalização
 │   ├── normalizacao.ts           # normalizadores compartilhados com o ETL
-│   └── mascaras.ts               # máscaras de CNPJ, telefone e data
+│   ├── mascaras.ts               # máscaras de CNPJ, telefone e data
+│   ├── planilha/                 # fórmulas, filtros, importação e leitura de parâmetros
+│   ├── calendario.ts             # dias úteis, feriados, Páscoa, ocorrências do mês
+│   ├── integracao.ts             # roteiros por departamento (copiados do app antigo)
+│   ├── portal-antigo.ts          # leitura da exportação do Portal Meta Plano
+│   ├── notificacoes.ts / forum.ts / impressao.ts
 ├── types/banco.ts                # tipos espelhando o schema
 └── middleware.ts                 # renova sessão e barra rotas sem autenticação
 
@@ -159,7 +180,7 @@ scripts/
 └── seed-usuarios.ts              # criação de usuários
 
 supabase/
-├── migrations/                   # 0001 … 0015 (todas aplicadas)
+├── migrations/                   # 0001 … 0023 (todas aplicadas)
 ├── APLICAR_NO_SQL_EDITOR.sql     # gerado por `npm run migrations:juntar`
 └── functions/importar-legalizacao/   # Edge Function usada na carga inicial
 ```
@@ -194,6 +215,13 @@ supabase/
 | `legalizacao_documentos_necessarios` | Checklist de documentos (aba "Docs Necessários") |
 | `legalizacao_opcoes` | Listas de valores dos selects (aba "Base") |
 | `legalizacao_checklist_referencia` | Modelos de parecer (abas "Status" e "Conferência") |
+| `planilha_colunas` | Colunas criadas pela equipe (texto, número, data, lista, fórmula) nas planilhas |
+| `usuario_preferencias` | Ajustes pessoais de tela: colunas visíveis, ordem, larguras, filtros |
+| `notificacoes` / `notificacao_preferencias` | Caixa de cada usuário (escrita só pelo banco) e o que cada um quer receber |
+| `forum_posts`, `forum_curtidas`, `forum_salvos`, `forum_votos`, `forum_seguidores` | Fórum da Meta |
+| `calendario_regras` / `calendario_eventos` / `calendario_conclusoes` | Obrigações fixas, compromissos e o que foi concluído |
+| `integracoes` / `integracao_departamentos` | Ficha do cliente novo e o roteiro de cada departamento |
+| `brasil_estados` / `brasil_municipios` / `referencias_links` | Os 5.570 municípios e os links de consulta |
 
 ### Relacionamentos
 
@@ -221,11 +249,16 @@ marca por usuário. `admin` continua tendo tudo, sempre.
 
 | Grupo | Chaves |
 | --- | --- |
-| Telas | `tela.inicio`, `tela.legalizacao`, `tela.processos`, `tela.referencias`, `tela.importacoes`, `tela.atribuicoes`, `tela.fiscal`, `tela.contabil`, `tela.dp`, `tela.dashboard` |
+| Telas | `tela.inicio`, `tela.legalizacao`, `tela.processos`, `tela.referencias`, `tela.atribuicoes`, `tela.dashboard`, `tela.forum`, `tela.calendario`, `tela.integracao`, `tela.fiscal`, `tela.contabil`, `tela.dp` |
 | Telas **exclusivas de admin** | `tela.administrativo`, `tela.auditoria`, `tela.configuracoes` |
-| Dados | `dados.legalizacao.criar`, `.editar`, `.excluir`, `.exportar` |
-| Dados (Controle Geral) | `dados.processos.criar`, `.editar`, `.excluir`, `dados.opcoes.gerenciar` |
-| Dados **exclusivos de admin** | `dados.administrativo.editar`, `dados.administrativo.exportar` |
+| Dados | `dados.legalizacao.criar`, `.editar`, `.excluir`, `.exportar`, `.importar`, `dados.planilha.colunas`, `dados.referencias.editar` |
+| Dados (Controle Legalização) | `dados.processos.criar`, `.editar`, `.excluir`, `dados.opcoes.gerenciar` |
+| Dados (Calendário e Integração) | `dados.calendario.gerenciar` (responsável do departamento), `dados.calendario.todos` (acesso geral), `dados.integracao.excluir` |
+| Dados (Fórum) | `dados.forum.moderar` |
+| Dados **exclusivos de admin** | `dados.administrativo.editar`, `dados.administrativo.exportar`, `dados.administrativo.importar` |
+
+A tela **Notificações** e o **Início** abrem para qualquer usuário ativo: cada um só vê o que é dele.
+`tela.importacoes` foi desativada junto com a tela (o relatório da carga continua em `docs/`).
 | Administração | `admin.usuarios.gerenciar`, `admin.usuarios.permissoes`, `admin.atribuicoes.gerenciar` |
 
 As chaves marcadas como **exclusivas de admin** não podem ser concedidas a mais ninguém
@@ -252,7 +285,27 @@ Camadas de proteção, da mais externa para a mais interna:
 
 Ver [`docs/SEGURANCA.md`](docs/SEGURANCA.md) para as evidências dos testes executados.
 
-### Controle Geral (a aba CONTROLE_GERAL, no portal)
+### Planilha estilo Excel (Legalização e ADM)
+
+As duas planilhas funcionam como no Excel, com tudo carregado de uma vez (filtrar e ordenar
+é instantâneo):
+
+- **Filtro por coluna** na setinha de cada cabeçalho: ordenar A→Z/Z→A, condição (contém,
+  começa com, maior que, entre datas, vazias…) e a lista de valores com caixinhas e busca.
+  O botão **Filtros** continua para montar regras combinadas.
+- **Ordenar** em vários níveis; paginação e "Mostrar" também **no topo**, com uma barra de
+  rolagem horizontal em cima, sincronizada com a de baixo.
+- **Importar** lê qualquer planilha (xlsx, xls, ods, csv — no navegador), acha a linha do
+  cabeçalho, sugere o destino de cada coluna e pergunta o que fazer com empresa repetida:
+  substituir, completar só o vazio, pular ou adicionar mesmo assim.
+- **Colunas**: mostrar/esconder/reordenar (pessoal) e criar colunas da equipe — texto,
+  número, data, lista, sim/não ou **fórmula** (`=SE([Status]="ATIVO";"ok";"rever")`,
+  `SOMA`, `DIAS`, `HOJE`, `CONCATENAR`… em português, com `;`). Fórmula nunca usa `eval`.
+- Selo de **processos em aberto** ao lado da razão social, que abre o Controle Legalização
+  já filtrado; no painel da empresa, atalhos para Processos, Integração e Calendário.
+- Links do Dashboard abrem a planilha filtrada (`?f.cidade=Jundiaí`, `?f.tributacao=MEI`).
+
+### Controle Legalização (a aba CONTROLE_GERAL, no portal)
 
 Segunda planilha da Legalização: o acompanhamento de cada processo aberto num órgão —
 abertura, alvará, vigilância, baixa — com protocolo, prazo e responsável. As 13 colunas, a
@@ -286,6 +339,56 @@ que já estiver preenchido.
 **Exportação fiel.** O botão Exportar gera um .xlsx com a aba CONTROLE_GERAL nas mesmas
 colunas, com o mesmo vermelho e o mesmo âmbar, mais as abas de painel — para quem precisar
 mandar o arquivo para fora do portal.
+
+Desde a nova versão: status, próxima ação, tipo, órgão, prazo e responsável mudam **direto na
+linha**; toda lista tem "Outro…" no fim; o gráfico de vencimentos filtra o mês ao clicar; e
+dá para criar **campos adicionais** da equipe além dos fixos.
+
+### Calendário de Obrigações
+
+O "Portal Meta Plano" (Apps Script) agora mora no portal, com o visual do portal e a mesma
+lógica: obrigações fixas com vencimento calculado (n-ésimo dia útil, último dia útil, dia fixo
+que antecipa ou prorroga, sábado útil da CLT, feriados nacionais, Páscoa e feriados
+cadastrados), compromissos, demandas com prazo inicial e final, reuniões gerais e de
+integração. Cada um conclui com um clique; a **Visão geral** mostra andamento por
+departamento e por pessoa e os atrasados. **Relatório** em PDF (pela impressão do
+navegador) ou Excel. Os links `?d=fiscal` do app antigo continuam valendo.
+
+| Quem | Vê | Edita |
+| --- | --- | --- |
+| `tela.calendario` | o próprio departamento e o que foi marcado "também aparece para" | conclui itens |
+| + `dados.calendario.gerenciar` | idem | cria e altera obrigações e compromissos do próprio departamento |
+| + `dados.calendario.todos` | todos os departamentos | todos os departamentos |
+
+O departamento vem do **time** da pessoa (Qualidade é um time novo). As datas são calculadas
+igual no navegador e no banco (`calendario_ocorrencias()`), que alimenta o Início e o sino.
+
+### Integração de Clientes
+
+Roteiro da reunião de integração do cliente novo, copiado sem alteração do app antigo: a
+Qualidade abre (a partir da **Reunião de Integração** do calendário ou pelo botão), e cada
+departamento preenche o seu roteiro — itens obrigatórios ★, respostas, orientações,
+anotações, prazos combinados e checklist de documentos (que muda entre abertura e
+transferência). Salva sozinho; a ficha do cliente é comum e mesclada campo a campo, para
+dois departamentos não se sobrescreverem. **Finalizar** trava o roteiro (só o responsável do
+departamento reabre) e libera o **relatório em PDF** daquele departamento. Quem abriu a
+integração é notificado a cada departamento que finaliza.
+
+### Fórum da Meta
+
+Uma rede interna no estilo Twitter: posts com até 4 fotos e enquete, curtir, responder,
+citar, salvar, fixar (moderação), `#tags` e `@menções`. Perfil com foto, capa e bio; o
+**sininho** no perfil avisa de cada post daquela pessoa. Busca por texto, pessoa ou tag, e
+"Me surpreenda". Fotos ficam no Storage privado, servidas por URL assinada.
+
+### Notificações
+
+Sino no topo de toda tela, em tempo real, e a central **Notificações** com filtros, ações em
+lote e preferências. Avisa de: prazos vencendo ou vencidos (calendário, processos,
+atribuições), qualquer coisa colocada no seu nome, menções e posts de quem você segue no
+fórum, roteiros de integração finalizados. Dá para **concluir a tarefa de origem** pelo
+próprio aviso. As notificações são escritas só pelo banco — ninguém forja um aviso para
+outra pessoa.
 
 ### Atribuições (quem faz o quê, e até quando)
 
@@ -385,7 +488,7 @@ Ou pelo painel: **Supabase → Authentication → Users → Add user**, preenche
 O gatilho `handle_new_user` cria o registro em `profiles` automaticamente. Contas criadas
 assim nascem **sem permissão nenhuma** — conceda pela tela de Usuários.
 
-**Times:** `legalizacao`, `fiscal`, `contabil`, `departamento_pessoal`, `administracao`
+**Times:** `legalizacao`, `fiscal`, `contabil`, `departamento_pessoal`, `qualidade`, `administracao`
 **Funções:** `admin`, `gestor`, `colaborador`
 
 Um usuário não consegue alterar a própria função, área ou situação — o gatilho
@@ -446,11 +549,32 @@ comando, em vez de ficar repetindo a tela de login.
 | Perfil | Destino |
 | --- | --- |
 | `admin` | `/dashboard` |
-| área `legalizacao` | `/legalizacao` |
-| área `fiscal` | `/fiscal` |
-| área `contabil` | `/contabil` |
-| área `departamento_pessoal` | `/departamento-pessoal` |
-| inativo ou sem área válida | `/sem-acesso` |
+| demais | a primeira tela que a pessoa recebeu, nesta ordem: Dashboard, Planilha Legalização, Controle Legalização, Calendário, Fiscal, Contábil, DP, Início |
+| sem nenhuma tela | `/inicio` (só Início e Notificações, que são de todo mundo) |
+| inativo | `/sem-acesso` |
+
+Quem abriu um link sem estar logado (de uma notificação, por exemplo) volta **exatamente**
+para ele depois do login, com os parâmetros (`?item=`, `?empresa=`, `?d=`).
+
+---
+
+## Importar do app antigo (Portal Meta Plano)
+
+O app antigo guardava tudo na aba **`dados`** da planilha Google *"Calendário Contábil -
+Dados"* — inclusive as pessoas, que **não** vieram no zip do código. Para trazer:
+
+1. No Google Planilhas, aba `dados` → *Arquivo → Fazer download → Microsoft Excel (.xlsx)*.
+2. No portal, **Usuários → Importar do app antigo** (só admin) e escolha o arquivo.
+3. Revise: cada pessoa vira conta **colaborador sem nenhuma permissão** (ou é ligada a uma
+   conta que já existe com o mesmo nome). O app antigo não tinha e-mail: o importador sugere
+   `nome@metaplanocontabil.com.br`, que pode ser corrigido antes ou depois
+   (**Alterar e-mail** na tela de Usuários). A senha é aleatória — use **Redefinir senha**
+   ao liberar o acesso.
+4. Obrigações fixas (com os ajustes que a equipe fez), compromissos, concluídos e
+   integrações entram com os mesmos ids do app antigo: importar de novo atualiza sem duplicar.
+
+Criar contas exige `SUPABASE_SERVICE_ROLE_KEY` no servidor; sem ela, o importador diz isso
+e não finge que criou. Compromissos já vencidos não geram notificação.
 
 ---
 

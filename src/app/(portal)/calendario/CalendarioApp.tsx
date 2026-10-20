@@ -910,7 +910,9 @@ function VisaoGeral({
     .sort((a, b) => Number(a.sem) - Number(b.sem) || a.nome.localeCompare(b.nome, 'pt-BR'))
     .map((g) => ({ ...g, deps: [...new Set(g.itens.map((o) => o.departamento))].join(', '), ...conta(g.itens) }));
   const atrasadas = unicas.filter((o) => atrasada(o, feitas, hoje));
-  const base_url = typeof window !== 'undefined' ? window.location.origin : '';
+  // O endereço do portal só existe no navegador; no servidor o link sai relativo.
+  const [base_url, setBaseUrl] = useState('');
+  useEffect(() => setBaseUrl(window.location.origin), []);
 
   const Barra = ({ pct }: { pct: number }) => (
     <div className="flex items-center gap-2">
