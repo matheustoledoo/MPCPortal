@@ -21,6 +21,7 @@ export const AREAS: { valor: Area; rotulo: string; rota: string }[] = [
   { valor: 'fiscal', rotulo: 'Fiscal', rota: '/fiscal' },
   { valor: 'contabil', rotulo: 'Contábil', rota: '/contabil' },
   { valor: 'departamento_pessoal', rotulo: 'Departamento Pessoal', rota: '/departamento-pessoal' },
+  { valor: 'qualidade', rotulo: 'Qualidade', rota: '/calendario' },
   { valor: 'administracao', rotulo: 'Administração', rota: '/dashboard' },
 ];
 
@@ -47,8 +48,10 @@ export const PERMISSOES = {
   telaLegalizacao: 'tela.legalizacao',
   telaProcessos: 'tela.processos',
   telaReferencias: 'tela.referencias',
-  telaImportacoes: 'tela.importacoes',
   telaAtribuicoes: 'tela.atribuicoes',
+  telaForum: 'tela.forum',
+  telaCalendario: 'tela.calendario',
+  telaIntegracao: 'tela.integracao',
   telaFiscal: 'tela.fiscal',
   telaContabil: 'tela.contabil',
   telaDp: 'tela.dp',
@@ -61,13 +64,22 @@ export const PERMISSOES = {
   editarEmpresas: 'dados.legalizacao.editar',
   excluirEmpresas: 'dados.legalizacao.excluir',
   exportarLegalizacao: 'dados.legalizacao.exportar',
+  importarLegalizacao: 'dados.legalizacao.importar',
+  personalizarColunas: 'dados.planilha.colunas',
   editarAdministrativo: 'dados.administrativo.editar',
   exportarAdministrativo: 'dados.administrativo.exportar',
+  importarAdministrativo: 'dados.administrativo.importar',
 
   criarProcessos: 'dados.processos.criar',
   editarProcessos: 'dados.processos.editar',
   excluirProcessos: 'dados.processos.excluir',
   gerenciarOpcoes: 'dados.opcoes.gerenciar',
+  editarReferencias: 'dados.referencias.editar',
+
+  gerenciarCalendario: 'dados.calendario.gerenciar',
+  calendarioTodos: 'dados.calendario.todos',
+  excluirIntegracao: 'dados.integracao.excluir',
+  moderarForum: 'dados.forum.moderar',
 
   gerenciarUsuarios: 'admin.usuarios.gerenciar',
   concederPermissoes: 'admin.usuarios.permissoes',
@@ -81,6 +93,7 @@ export const PERMISSOES_SOMENTE_ADMIN: string[] = [
   PERMISSOES.telaConfiguracoes,
   PERMISSOES.editarAdministrativo,
   PERMISSOES.exportarAdministrativo,
+  PERMISSOES.importarAdministrativo,
 ];
 
 /* -------------------------------------------------------------------------- */
@@ -181,11 +194,15 @@ export function podeEditarColuna(perfil: Usuario, campo: string, confidencial = 
 export const ROTAS_PROTEGIDAS: { rota: string; permissao: string }[] = [
   { rota: '/dashboard', permissao: PERMISSOES.telaDashboard },
   { rota: '/legalizacao', permissao: PERMISSOES.telaLegalizacao },
+  { rota: '/controle-legalizacao', permissao: PERMISSOES.telaProcessos },
+  // Endereço antigo: continua protegido enquanto redireciona.
   { rota: '/controle-geral', permissao: PERMISSOES.telaProcessos },
   { rota: '/administrativo', permissao: PERMISSOES.telaAdministrativo },
   { rota: '/referencias', permissao: PERMISSOES.telaReferencias },
-  { rota: '/importacoes', permissao: PERMISSOES.telaImportacoes },
   { rota: '/atribuicoes', permissao: PERMISSOES.telaAtribuicoes },
+  { rota: '/forum', permissao: PERMISSOES.telaForum },
+  { rota: '/calendario', permissao: PERMISSOES.telaCalendario },
+  { rota: '/integracao-clientes', permissao: PERMISSOES.telaIntegracao },
   { rota: '/usuarios', permissao: PERMISSOES.gerenciarUsuarios },
   { rota: '/auditoria', permissao: PERMISSOES.telaAuditoria },
   { rota: '/configuracoes', permissao: PERMISSOES.telaConfiguracoes },
@@ -202,8 +219,11 @@ export const ROTAS_PROTEGIDAS: { rota: string; permissao: string }[] = [
  * nenhuma — sem isso, um usuário recém-criado ficaria preso em `/sem-acesso`.
  * A tela em si não mostra dado de negócio: só o nome da pessoa, as atribuições
  * dela e atalhos para o que ela pode abrir.
+ *
+ * `/notificacoes` é a caixa de entrada pessoal: cada um só vê as próprias
+ * notificações (RLS por `usuario_id`), então não depende de permissão.
  */
-const ROTAS_LIVRES = ['/perfil', '/sem-acesso', '/inicio'];
+const ROTAS_LIVRES = ['/perfil', '/sem-acesso', '/inicio', '/notificacoes'];
 
 export function podeAcessarRota(perfil: Usuario, rota: string): boolean {
   if (!perfil?.ativo) return false;
@@ -224,7 +244,8 @@ export function rotaInicial(perfil: Usuario): string {
   const preferencia = [
     { rota: '/dashboard', permissao: PERMISSOES.telaDashboard },
     { rota: '/legalizacao', permissao: PERMISSOES.telaLegalizacao },
-    { rota: '/controle-geral', permissao: PERMISSOES.telaProcessos },
+    { rota: '/controle-legalizacao', permissao: PERMISSOES.telaProcessos },
+    { rota: '/calendario', permissao: PERMISSOES.telaCalendario },
     { rota: '/fiscal', permissao: PERMISSOES.telaFiscal },
     { rota: '/contabil', permissao: PERMISSOES.telaContabil },
     { rota: '/departamento-pessoal', permissao: PERMISSOES.telaDp },

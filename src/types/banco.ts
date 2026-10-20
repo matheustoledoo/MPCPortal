@@ -3,7 +3,8 @@
  * Espelham exatamente o schema aplicado em `supabase/migrations`.
  */
 
-export type Area = 'legalizacao' | 'fiscal' | 'contabil' | 'departamento_pessoal' | 'administracao';
+export type Area =
+  | 'legalizacao' | 'fiscal' | 'contabil' | 'departamento_pessoal' | 'qualidade' | 'administracao';
 export type Role = 'admin' | 'gestor' | 'colaborador';
 export type OrigemRegistro = 'planilha_saude' | 'planilha_adm' | 'ambas' | 'manual';
 export type AcaoAuditoria =
@@ -18,6 +19,12 @@ export interface Perfil {
   ativo: boolean;
   telefone: string | null;
   ultimo_acesso: string | null;
+  /** Perfil público do Fórum da Meta (migration 0019). */
+  apelido?: string | null;
+  bio?: string | null;
+  cargo?: string | null;
+  avatar_path?: string | null;
+  capa_cor?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -68,9 +75,12 @@ export interface Empresa {
   revisao_motivo: string | null;
   responsavel_id: string | null;
 
-  /** Aviso vindo do Controle Geral — mantidos por gatilho, não editáveis. */
+  /** Aviso vindo do Controle Legalização — mantidos por gatilho, não editáveis. */
   processos_abertos: number;
   processo_proximo_prazo: string | null;
+
+  /** Valores das colunas criadas pela equipe (planilha_colunas). */
+  campos_extras: Record<string, unknown>;
 
   created_at: string;
   updated_at: string;
@@ -92,6 +102,7 @@ export interface DadosAdministrativos {
   competencia_label: string | null;
   honorarios_historico: { competencia: string | null; label: string; valor: number | null }[];
   observacoes_internas: string | null;
+  campos_extras: Record<string, unknown>;
   created_at: string;
   updated_at: string;
   created_by: string | null;
@@ -313,6 +324,8 @@ export interface Processo {
   proxima_acao: string | null;
   observacoes: string | null;
   indicador: string | null;
+  /** Campos opcionais: colunas da equipe e pares "rótulo → valor" livres. */
+  campos_extras: Record<string, unknown>;
   ultima_atualizacao: string;
   created_at: string;
   updated_at: string;
@@ -366,4 +379,256 @@ export interface ExecucaoAtribuicao {
   concluida_em: string;
   concluida_por: string | null;
   observacao: string | null;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Planilhas personalizáveis (migration 0016)                                  */
+/* -------------------------------------------------------------------------- */
+
+export type TabelaPlanilha =
+  | 'legalizacao_empresas'
+  | 'legalizacao_dados_administrativos'
+  | 'legalizacao_processos';
+
+export type TipoColunaPersonalizada =
+  | 'texto' | 'longo' | 'numero' | 'moeda' | 'data' | 'status' | 'booleano' | 'formula';
+
+export type FormatoFormula = 'texto' | 'numero' | 'moeda' | 'data' | 'status' | 'booleano';
+
+export interface PlanilhaColuna {
+  id: string;
+  tabela: TabelaPlanilha;
+  campo: string;
+  personalizada: boolean;
+  rotulo: string;
+  tipo: TipoColunaPersonalizada;
+  formula: string | null;
+  formato: FormatoFormula;
+  opcoes: string[];
+  largura: number;
+  ordem: number;
+  oculta: boolean;
+  descricao: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Notificações (migration 0018)                                               */
+/* -------------------------------------------------------------------------- */
+
+export type CategoriaNotificacao =
+  | 'prazo' | 'atribuicao' | 'processo' | 'calendario' | 'forum' | 'mencao' | 'integracao' | 'sistema';
+
+export type PrioridadeNotificacao = 'baixa' | 'normal' | 'alta' | 'urgente';
+
+export interface Notificacao {
+  id: string;
+  usuario_id: string;
+  categoria: CategoriaNotificacao;
+  tipo: string;
+  titulo: string;
+  mensagem: string | null;
+  link: string | null;
+  prioridade: PrioridadeNotificacao;
+  ator_id: string | null;
+  origem_tabela: string | null;
+  origem_id: string | null;
+  prazo: string | null;
+  chave: string | null;
+  dados: Record<string, unknown>;
+  lida_em: string | null;
+  concluida_em: string | null;
+  arquivada_em: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ContagemNotificacoes {
+  nao_lidas: number;
+  urgentes: number;
+  prazos: number;
+  por_categoria: Partial<Record<CategoriaNotificacao, number>>;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Fórum da Meta (migration 0019)                                              */
+/* -------------------------------------------------------------------------- */
+
+export interface AutorForum {
+  id: string;
+  nome: string;
+  apelido: string | null;
+  avatar_path: string | null;
+  cargo?: string | null;
+  area?: Area | null;
+}
+
+export interface EnqueteForum {
+  opcoes: string[];
+  encerra_em?: string | null;
+}
+
+/** Formato devolvido por `forum_listar()`. */
+export interface PostForum {
+  id: string;
+  texto: string;
+  imagens: string[];
+  pai_id: string | null;
+  raiz_id: string | null;
+  citacao_id: string | null;
+  enquete: EnqueteForum | null;
+  tags: string[];
+  fixado: boolean;
+  editado_em: string | null;
+  created_at: string;
+  curtidas: number;
+  respostas: number;
+  citacoes: number;
+  curti: boolean;
+  salvei: boolean;
+  meu_voto: number | null;
+  votos: number[] | null;
+  autor: AutorForum | null;
+  respondendo_a: { id: string; apelido: string | null; nome: string } | null;
+  citacao: {
+    id: string;
+    texto: string;
+    imagens: string[];
+    created_at: string;
+    autor: AutorForum | null;
+  } | null;
+}
+
+/** Formato devolvido por `forum_perfil()`. */
+export interface PerfilForum {
+  id: string;
+  nome: string;
+  apelido: string | null;
+  bio: string | null;
+  cargo: string | null;
+  area: Area | null;
+  avatar_path: string | null;
+  capa_cor: string | null;
+  desde: string;
+  posts: number;
+  respostas: number;
+  seguidores: number;
+  seguindo: number;
+  curtidas_recebidas: number;
+  eu_sigo: boolean;
+  sininho: boolean;
+  me_segue: boolean;
+}
+
+export interface PessoaForum {
+  id: string;
+  nome: string;
+  apelido: string | null;
+  cargo: string | null;
+  area: Area | null;
+  avatar_path: string | null;
+  seguidores: number;
+  eu_sigo: boolean;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Calendário de Obrigações e Integração de Clientes (migration 0017)          */
+/* -------------------------------------------------------------------------- */
+
+export type Departamento =
+  | 'Matriz' | 'Fiscal' | 'Departamento Pessoal' | 'Contabilidade' | 'Legalização' | 'Qualidade';
+
+export type CategoriaCalendario =
+  | 'Federal' | 'Trabalhista' | 'Estadual' | 'Municipal' | 'Interna' | 'Outro' | 'Feriado';
+
+export type TipoVencimento = 'dia' | 'diaUtil' | 'ultimoDiaUtil';
+export type AjusteVencimento = 'antecipa' | 'prorroga' | 'nenhum';
+export type ReferenciaCompetencia = '' | 'mes' | 'mes2' | 'tri' | 'ano' | 'atual';
+export type TipoEvento = '' | 'Demanda' | 'Reunião Geral' | 'Reunião de Integração';
+export type Recorrencia = 'nenhuma' | 'mensal' | 'anual';
+
+export interface RegraCalendario {
+  id: string;
+  nome: string;
+  departamento: Departamento;
+  categoria: CategoriaCalendario;
+  regime: string;
+  tipo: TipoVencimento;
+  dia: number;
+  ajuste: AjusteVencimento;
+  meses: number[];
+  ref: ReferenciaCompetencia;
+  descricao: string;
+  ativo: boolean;
+  sabado_util: boolean;
+  responsavel_id: string | null;
+  responsavel_nome: string | null;
+  updated_at?: string;
+}
+
+export interface EventoCalendario {
+  id: string;
+  titulo: string;
+  data: string;
+  data_inicio: string | null;
+  hora: string | null;
+  tipo: TipoEvento;
+  categoria: CategoriaCalendario;
+  departamento: Departamento;
+  visivel_para: Departamento[];
+  responsavel_id: string | null;
+  responsavel_nome: string | null;
+  designado_por: string | null;
+  designado_por_nome: string | null;
+  recorrencia: Recorrencia;
+  empresa_id: string | null;
+  empresa: string | null;
+  cnpj: string | null;
+  contato: string | null;
+  modalidade: string | null;
+  notas: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ConclusaoCalendario {
+  chave: string;
+  mes: string;
+  concluido_em: string;
+  concluido_por: string | null;
+  concluido_por_nome: string | null;
+}
+
+export interface Integracao {
+  id: string;
+  ficha: Record<string, string>;
+  empresa_id: string | null;
+  evento_id: string | null;
+  criado_por: string | null;
+  criado_por_nome: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IntegracaoDepartamento {
+  integracao_id: string;
+  departamento: Departamento;
+  dados: Record<string, unknown>;
+  atendido_por: string | null;
+  finalizado: boolean;
+  finalizado_em: string | null;
+  finalizado_por: string | null;
+  finalizado_por_nome: string | null;
+  updated_at: string;
+}
+
+/** Linha de `integracoes_resumo()`: a situação de cada roteiro, sem o conteúdo. */
+export interface ResumoIntegracao {
+  integracao_id: string;
+  departamento: Departamento;
+  finalizado: boolean;
+  finalizado_em: string | null;
+  finalizado_por: string | null;
+  atendido_por: string | null;
 }

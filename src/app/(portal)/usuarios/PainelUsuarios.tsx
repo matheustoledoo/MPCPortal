@@ -4,7 +4,9 @@ import { useMemo, useState } from 'react';
 
 import { useRouter } from 'next/navigation';
 import {
+  AtSign,
   Columns3,
+  History,
   KeyRound,
   Layers,
   Lock,
@@ -15,6 +17,7 @@ import {
 } from 'lucide-react';
 
 import { FormularioNovoUsuario } from '@/app/(portal)/usuarios/FormularioNovoUsuario';
+import { ImportadorPortalAntigo } from '@/app/(portal)/usuarios/ImportadorPortalAntigo';
 import {
   Botao,
   Cartao,
@@ -68,6 +71,9 @@ export function PainelUsuarios({
   const [confirmandoDesativar, setConfirmandoDesativar] = useState<Perfil | null>(null);
   const [redefinindoSenha, setRedefinindoSenha] = useState<Perfil | null>(null);
   const [novaSenha, setNovaSenha] = useState('');
+  const [trocandoEmail, setTrocandoEmail] = useState<Perfil | null>(null);
+  const [novoEmail, setNovoEmail] = useState('');
+  const [importando, setImportando] = useState(false);
 
   const souAdmin = ehAdmin(meuPerfil);
   const possoConceder = podeConcederPermissoes(meuPerfil);
@@ -177,6 +183,35 @@ export function PainelUsuarios({
     }
   }
 
+  async function trocarEmail() {
+    if (!trocandoEmail) return;
+    setSalvando(true);
+    try {
+      const resposta = await fetch('/api/admin/usuarios', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ usuarioId: trocandoEmail.id, novoEmail }),
+      });
+      const corpo = await resposta.json();
+      if (!resposta.ok) throw new Error(corpo.erro ?? 'Falha ao trocar o e-mail.');
+      const email = (corpo.email as string | undefined) ?? novoEmail.trim().toLowerCase();
+      setUsuarios((atuais) => atuais.map((u) => (u.id === trocandoEmail.id ? { ...u, email } : u)));
+      setSelecionado((atual) => (atual?.id === trocandoEmail.id ? { ...atual, email } : atual));
+      avisar('sucesso', `E-mail de ${trocandoEmail.nome} alterado.`);
+      setTrocandoEmail(null);
+    } catch (e) {
+      avisar('erro', e instanceof Error ? e.message : 'Não foi possível trocar o e-mail.');
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  async function recarregarUsuarios() {
+    const { data } = await supabase.from('profiles').select('*').order('nome');
+    if (data) setUsuarios(data as Perfil[]);
+    router.refresh();
+  }
+
   const gruposCatalogo = ['telas', 'dados', 'administracao'] as const;
 
   return (
@@ -207,6 +242,12 @@ export function PainelUsuarios({
               ))}
             </Selecao>
           </div>
+          {souAdmin && (
+            <Botao variante="secundario" onClick={() => setImportando(true)} title="Pessoas e dados do Portal Meta Plano (Apps Script)">
+              <History className="h-4 w-4" />
+              Importar do app antigo
+            </Botao>
+          )}
           <Botao onClick={() => setCriando(true)}>
             <UserPlus className="h-4 w-4" />
             Novo usuário
@@ -290,6 +331,17 @@ export function PainelUsuarios({
                   >
                     <KeyRound className="h-3.5 w-3.5" />
                     Redefinir senha
+                  </Botao>
+                  <Botao
+                    variante="secundario"
+                    tamanho="sm"
+                    onClick={() => {
+                      setTrocandoEmail(selecionado);
+                      setNovoEmail(selecionado.email);
+                    }}
+                  >
+                    <AtSign className="h-3.5 w-3.5" />
+                    Alterar e-mail
                   </Botao>
                   {selecionado.ativo ? (
                     <Botao
@@ -499,6 +551,38 @@ export function PainelUsuarios({
           }}
         />
       </Modal>
+
+      {/* Alterar e-mail (contas importadas do app antigo nascem com um sugerido) */}
+      <Modal
+        aberto={Boolean(trocandoEmail)}
+        aoFechar={() => setTrocandoEmail(null)}
+        titulo={`Alterar e-mail de ${trocandoEmail?.nome ?? ''}`}
+        descricao="É o e-mail usado para entrar no portal. Vale na hora; a senha continua a mesma."
+        largura="sm"
+        rodape={
+          <>
+            <Botao variante="secundario" onClick={() => setTrocandoEmail(null)} disabled={salvando}>
+              Cancelar
+            </Botao>
+            <Botao
+              onClick={() => void trocarEmail()}
+              carregando={salvando}
+              disabled={!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(novoEmail.trim()) || novoEmail.trim().toLowerCase() === trocandoEmail?.email}
+            >
+              Salvar
+            </Botao>
+          </>
+        }
+      >
+        <Campo rotulo="Novo e-mail" type="email" value={novoEmail} onChange={(e) => setNovoEmail(e.target.value)} autoFocus />
+      </Modal>
+
+      <ImportadorPortalAntigo
+        aberto={importando}
+        aoFechar={() => setImportando(false)}
+        usuarios={usuarios}
+        aoCriarUsuarios={() => void recarregarUsuarios()}
+      />
 
       {/* Redefinir senha */}
       <Modal

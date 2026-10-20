@@ -89,8 +89,10 @@ export async function middleware(request: NextRequest) {
   if (!user && !ehPublica) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
-    // Preserva o destino para retomar a navegação depois do login.
-    if (pathname !== '/') url.searchParams.set('proximo', pathname);
+    url.search = '';
+    // Preserva o destino inteiro (com ?d=, ?item=, ?empresa=…) para retomar
+    // a navegação depois do login — os links das notificações dependem disso.
+    if (pathname !== '/') url.searchParams.set('proximo', `${pathname}${request.nextUrl.search}`);
     return NextResponse.redirect(url);
   }
 

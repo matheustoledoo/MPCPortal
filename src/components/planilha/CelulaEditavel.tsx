@@ -46,6 +46,8 @@ export function CelulaEditavel({
   editavel,
   dicaBloqueio,
   aoSalvar,
+  textoFormula,
+  erroFormula,
 }: {
   coluna: DefinicaoColuna;
   valor: unknown;
@@ -53,6 +55,9 @@ export function CelulaEditavel({
   /** Explica por que a célula está travada — some a dúvida de "por que não edito?". */
   dicaBloqueio?: string;
   aoSalvar: (novoValor: string) => Promise<void>;
+  /** Coluna de fórmula: o resultado já formatado. */
+  textoFormula?: string;
+  erroFormula?: string;
 }) {
   const [editando, setEditando] = useState(false);
   const [rascunho, setRascunho] = useState('');
@@ -161,6 +166,52 @@ export function CelulaEditavel({
           <X className="h-3.5 w-3.5" />
         </button>
       </div>
+    );
+  }
+
+  if (coluna.tipo === 'formula') {
+    if (erroFormula) {
+      return (
+        <span className="cursor-help font-mono text-xs font-semibold text-erro" title={erroFormula}>
+          {textoFormula}
+        </span>
+      );
+    }
+    if (!textoFormula) return <span className="px-1 text-texto-fraco">—</span>;
+    return (
+      <div className="min-h-6 truncate px-1 py-0.5" title={`Calculado por fórmula: ${coluna.formula ?? ''}`}>
+        {coluna.formato === 'status' ? (
+          <Selo tom={tomDoValor(textoFormula)}>{textoFormula}</Selo>
+        ) : coluna.formato === 'booleano' ? (
+          <Selo tom={textoFormula === 'Sim' ? 'sucesso' : 'neutro'}>{textoFormula}</Selo>
+        ) : (
+          <span className={cn(['numero', 'moeda'].includes(coluna.formato ?? '') && 'tabular-nums')}>{textoFormula}</span>
+        )}
+      </div>
+    );
+  }
+
+  // Sim/Não troca com um clique, sem abrir editor.
+  if (coluna.tipo === 'booleano' && editavel && coluna.editavel) {
+    return (
+      <button
+        type="button"
+        disabled={salvando}
+        onClick={async () => {
+          setSalvando(true);
+          try {
+            await aoSalvar(valor ? 'false' : 'true');
+          } catch {
+            /* o aviso de erro já foi mostrado por quem salva */
+          } finally {
+            setSalvando(false);
+          }
+        }}
+        className="rounded px-1 py-0.5 transition-colors hover:bg-marca-50 disabled:opacity-60"
+        title="Clique para alternar"
+      >
+        <Selo tom={valor ? 'alerta' : 'neutro'}>{valor ? 'Sim' : 'Não'}</Selo>
+      </button>
     );
   }
 

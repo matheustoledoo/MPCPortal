@@ -2,13 +2,14 @@
 
 import { useMemo, useState, type FormEvent } from 'react';
 
-import { Building2, Info } from 'lucide-react';
+import { Building2, Info, ListPlus, Plus, Settings2, Trash2 } from 'lucide-react';
 
 import { BuscaEmpresa } from '@/components/processos/BuscaEmpresa';
 import { AreaTexto, Botao, Campo, Combo, Selecao, Selo, cn } from '@/components/ui';
+import type { DefinicaoColuna } from '@/lib/colunas';
 import { mascararCnpj } from '@/lib/mascaras';
 import { formatarCnpj } from '@/lib/normalizacao';
-import { ROTULO_SITUACAO, TOM_SITUACAO, situacaoProcesso } from '@/lib/processos';
+import { ROTULO_SITUACAO, TOM_SITUACAO, camposLivres, situacaoProcesso, type CampoLivre } from '@/lib/processos';
 import type { EmpresaSugerida, Perfil, Processo } from '@/types/banco';
 
 export interface RascunhoProcesso {
@@ -27,6 +28,10 @@ export interface RascunhoProcesso {
   proxima_acao: string | null;
   observacoes: string;
   indicador: string | null;
+  /** Valores dos campos do time (planilha_colunas de processos). */
+  extras: Record<string, string>;
+  /** Campos livres "rótulo → valor", só deste processo. */
+  livres: CampoLivre[];
 }
 
 function hojeIso(deslocamento = 0): string {
@@ -52,6 +57,8 @@ export function rascunhoVazio(): RascunhoProcesso {
     proxima_acao: null,
     observacoes: '',
     indicador: null,
+    extras: {},
+    livres: [],
   };
 }
 
@@ -72,7 +79,26 @@ export function rascunhoDe(processo: Processo): RascunhoProcesso {
     proxima_acao: processo.proxima_acao,
     observacoes: processo.observacoes ?? '',
     indicador: processo.indicador,
+    extras: Object.fromEntries(
+      Object.entries(processo.campos_extras ?? {})
+        .filter(([chave, v]) => chave !== 'campos_livres' && v !== null && v !== undefined)
+        .map(([chave, v]) => [chave, String(v)]),
+    ),
+    livres: camposLivres(processo),
   };
+}
+
+/** Monta o `campos_extras` a gravar: campos do time + campos livres. */
+export function camposExtrasDoRascunho(r: RascunhoProcesso, anteriores: Record<string, unknown> = {}): Record<string, unknown> {
+  const resultado: Record<string, unknown> = { ...anteriores };
+  for (const [chave, valor] of Object.entries(r.extras)) {
+    if (valor.trim() === '') delete resultado[chave];
+    else resultado[chave] = valor.trim();
+  }
+  const livres = r.livres.filter((c) => c.rotulo.trim() && c.valor.trim()).map((c) => ({ rotulo: c.rotulo.trim(), valor: c.valor.trim() }));
+  if (livres.length) resultado.campos_livres = livres;
+  else delete resultado.campos_livres;
+  return resultado;
 }
 
 /**
@@ -130,6 +156,8 @@ export function FormularioProcesso({
   aoAdicionarOpcao,
   salvando,
   erro,
+  camposEquipe = [],
+  aoGerenciarCampos,
 }: {
   rascunho: RascunhoProcesso;
   aoMudar: (r: RascunhoProcesso) => void;
@@ -141,6 +169,10 @@ export function FormularioProcesso({
   aoAdicionarOpcao: (grupo: string, valor: string) => Promise<void>;
   salvando: boolean;
   erro: string | null;
+  /** Campos criados pelo time para todos os processos. */
+  camposEquipe?: DefinicaoColuna[];
+  /** Só para quem pode personalizar colunas. */
+  aoGerenciarCampos?: () => void;
 }) {
   const [empresaEscolhida, setEmpresaEscolhida] = useState<EmpresaSugerida | null>(null);
 
@@ -327,11 +359,115 @@ export function FormularioProcesso({
         placeholder="Exigências pendentes, contatos no órgão, número de guia…"
       />
 
+      <section className="space-y-3 rounded-xl border border-borda bg-superficie/60 p-3.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="flex items-center gap-1.5 text-sm font-semibold text-texto">
+              <ListPlus className="h-4 w-4 text-marca-600" />
+              Campos adicionais
+            </p>
+            <p className="text-[11px] text-texto-suave">
+              Os campos do time valem para todos os processos; os de baixo, só para este.
+            </p>
+          </div>
+          {aoGerenciarCampos && (
+            <Botao type="button" variante="secundario" tamanho="sm" onClick={aoGerenciarCampos}>
+              <Settings2 className="h-3.5 w-3.5" />
+              Campos do time
+            </Botao>
+          )}
+        </div>
+
+        {camposEquipe.filter((c) => c.tipo !== 'formula').length > 0 && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {camposEquipe
+              .filter((c) => c.tipo !== 'formula')
+              .map((campo) => {
+                const valor = rascunho.extras[campo.campo] ?? '';
+                const mudar = (v: string | null) => aoMudar({ ...rascunho, extras: { ...rascunho.extras, [campo.campo]: v ?? '' } });
+                if (campo.opcoes?.length) {
+                  return <Combo key={campo.campo} rotulo={campo.rotulo} valor={valor || null} opcoes={campo.opcoes} aoMudar={mudar} dica={campo.descricao ?? undefined} />;
+                }
+                if (campo.tipo === 'booleano') {
+                  return (
+                    <Selecao key={campo.campo} rotulo={campo.rotulo} value={valor} onChange={(e) => mudar(e.target.value)}>
+                      <option value="">—</option>
+                      <option value="true">Sim</option>
+                      <option value="false">Não</option>
+                    </Selecao>
+                  );
+                }
+                if (campo.tipo === 'longo') {
+                  return <AreaTexto key={campo.campo} rotulo={campo.rotulo} value={valor} onChange={(e) => mudar(e.target.value)} rows={2} />;
+                }
+                return (
+                  <Campo
+                    key={campo.campo}
+                    rotulo={campo.rotulo}
+                    type={campo.tipo === 'data' ? 'date' : campo.tipo === 'numero' || campo.tipo === 'moeda' ? 'number' : 'text'}
+                    step={campo.tipo === 'moeda' ? '0.01' : undefined}
+                    value={valor}
+                    onChange={(e) => mudar(e.target.value)}
+                    dica={campo.descricao ?? undefined}
+                  />
+                );
+              })}
+          </div>
+        )}
+
+        <div className="space-y-2">
+          {rascunho.livres.map((campo, indice) => (
+            <div key={indice} className="flex items-end gap-2">
+              <div className="w-2/5">
+                <Campo
+                  rotulo={indice === 0 ? 'Nome do campo' : undefined}
+                  value={campo.rotulo}
+                  onChange={(e) =>
+                    aoMudar({ ...rascunho, livres: rascunho.livres.map((c, i) => (i === indice ? { ...c, rotulo: e.target.value } : c)) })
+                  }
+                  placeholder="Ex.: Nº da guia"
+                  maxLength={60}
+                />
+              </div>
+              <div className="flex-1">
+                <Campo
+                  rotulo={indice === 0 ? 'Valor' : undefined}
+                  value={campo.valor}
+                  onChange={(e) =>
+                    aoMudar({ ...rascunho, livres: rascunho.livres.map((c, i) => (i === indice ? { ...c, valor: e.target.value } : c)) })
+                  }
+                  placeholder="o que quiser"
+                  maxLength={500}
+                />
+              </div>
+              <Botao
+                type="button"
+                variante="fantasma"
+                tamanho="icone"
+                onClick={() => aoMudar({ ...rascunho, livres: rascunho.livres.filter((_, i) => i !== indice) })}
+                aria-label="Remover campo"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Botao>
+            </div>
+          ))}
+          <Botao
+            type="button"
+            variante="secundario"
+            tamanho="sm"
+            onClick={() => aoMudar({ ...rascunho, livres: [...rascunho.livres, { rotulo: '', valor: '' }] })}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Outro campo (só neste processo)
+          </Botao>
+        </div>
+      </section>
+
       <p className="flex items-start gap-2 rounded-lg border border-borda bg-superficie px-3.5 py-2.5 text-[11px] leading-relaxed text-texto-suave">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-marca-600" />
         <span>
-          Em todos os campos com lista dá para digitar um valor que não está lá. Ele vale para
-          este processo; quem tem permissão pode guardá-lo na lista do time no mesmo menu.
+          Em todo campo com lista há a opção <strong>Outro…</strong> para escrever um valor que não
+          está lá. Ele vale para este processo; quem tem permissão pode guardá-lo na lista do time.
         </span>
       </p>
 

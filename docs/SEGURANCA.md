@@ -237,9 +237,11 @@ configurado no projeto — sem ele, a função recusa toda requisição.
 | Helpers `SECURITY DEFINER` expostos a `authenticated` | Por design | Cada um devolve apenas o status do próprio chamador; `authenticated` precisa de `EXECUTE` para a RLS funcionar. Nenhuma função é executável por `anon`. |
 | MFA para administradores | Não configurado | Avaliar TOTP no Supabase Auth quando o portal for para produção |
 | **`service_role` exposta em conversa** | A chave foi colada em texto durante o desenvolvimento | **Rotacionar** em Supabase → Project Settings → API e atualizar o `.env.local` |
+| **Senha do admin real compartilhada em conversa** | A senha de `adm@metaplanocontabil.com.br` circulou em texto | Trocar pelo próprio portal (Perfil) no primeiro acesso |
+| Contas importadas do app antigo | Nascem sem permissão, com senha aleatória e e-mail sugerido | Conferir o e-mail (Usuários → Alterar e-mail) e usar "Redefinir senha" só ao liberar o acesso |
 
 O linter de segurança do Supabase não aponta nenhuma tabela sem RLS nem nenhuma função
-executável por `anon`. As migrations `0001`–`0014` estão aplicadas.
+executável por `anon`. As migrations `0001`–`0023` estão aplicadas.
 
 ---
 
@@ -257,8 +259,17 @@ Os controles críticos foram verificados de novo no banco novo, por impersonaç�
 | Rebaixar `adm@metaplanocontabil.com.br` por manutenção | permissões confidenciais 5 → 0 |
 | Funções executáveis por `anon` | 0 |
 
-As evidências das seções 3 e 7 foram colhidas no projeto anterior, com dados reais; as que
-dependem das 373 empresas serão repetidas após a nova importação.
+Depois da recarga das planilhas (373 empresas, 358 registros administrativos), o
+isolamento dos dados confidenciais foi conferido de novo, agora com os dados reais:
+
+| Quem consulta | Empresas | Dados administrativos |
+| --- | --- | --- |
+| Colaborador da Legalização | 373 | **0** |
+| Admin (`adm@metaplanocontabil.com.br`) | 373 | 358 (R$ 159.135,98) |
+| Sem login (`anon`) | `42501` — sem privilégio na tabela | `42501` |
+
+As demais evidências das seções 3 e 7 foram colhidas no projeto anterior, com o mesmo
+schema e os mesmos dados.
 
 ## 7. Evidências do modelo modular (migrations 0010–0014)
 
@@ -344,3 +355,49 @@ acesso que cada um já tinha na base de Legalização.
 `buscar_empresas_para_processo` e `processos_estatisticas` são `SECURITY DEFINER` e checam
 `can_read_legalizacao()` / `pode_ler_processos()` na primeira linha do corpo — um usuário sem
 acesso recebe lista e painel vazios, não um erro que revele a existência dos dados.
+
+### 7.7 Fórum, notificações e planilha personalizável (migrations 0016, 0018, 0019)
+
+Impersonação com dois colaboradores temporários, revertida ao final (outubro/2026):
+
+| Verificação | Resultado |
+| --- | --- |
+| Sem `tela.forum`: lista posts / publica | **0 linhas** / recusado pela RLS |
+| Com `tela.forum`, publica informando outro autor | gravado com o **próprio** `autor_id` (gatilho `forum_posts_preparar`) |
+| Edita post de outra pessoa | **0 linhas** afetadas |
+| Troca o autor do próprio post | ignorado — o gatilho mantém o autor original |
+| Fixa post sem `dados.forum.moderar` | ignorado |
+| Lê notificações de outra pessoa | **0 linhas** |
+| Cria notificação direto na tabela | recusado — só o banco escreve (gatilhos e funções `SECURITY DEFINER`) |
+| Cria coluna da equipe sem `dados.planilha.colunas` | recusado |
+| Grava preferências de tela de outra pessoa | recusado |
+| `anon` em `forum_posts`, `calendario_regras`, `integracoes` | **0 linhas** |
+
+Colunas da equipe na Planilha ADM (`tabela = 'legalizacao_dados_administrativos'`) só são
+vistas e criadas por admin — a mesma barreira dos dados confidenciais.
+
+### 7.8 Calendário e Integração de Clientes (migrations 0017, 0022, 0023)
+
+| Verificação | Resultado |
+| --- | --- |
+| Sem nenhuma permissão: obrigações / integrações | **0** / **0** linhas; `integracao_atualizar_ficha()` devolve nulo (RLS) |
+| Só `tela.calendario` (time Fiscal) | vê as 16 obrigações do Fiscal e **0** dos outros departamentos |
+| Só `tela.calendario`: cria obrigação | recusado |
+| Conclui item em nome próprio / em nome de outra pessoa | permitido / recusado |
+| `dados.calendario.gerenciar`: cria no próprio departamento / em outro | permitido / recusado |
+| Integração: grava o roteiro do próprio departamento / de outro | permitido / recusado |
+| Ficha comum: dois departamentos salvando campos diferentes | mesclada (`ficha || campos`), ninguém sobrescreve ninguém |
+| Finalizar | `finalizado_em` e `finalizado_por` carimbados pelo gatilho |
+| Colaborador sem `gerenciar` reabre ou altera roteiro finalizado | `42501` (gatilho `integracao_proteger_finalizado`) |
+| Departamentos que a pessoa não vê | só a situação, por `integracoes_resumo()` — nunca o conteúdo |
+
+A partir da `0023`, compromisso com data no passado (e que não se repete) não gera aviso de
+"designado para você" — a importação do histórico do app antigo não inunda o sino de ninguém.
+
+### 7.9 Rotas
+
+`middleware.ts` + `podeAcessarRota()`: sem sessão, toda rota do portal redireciona para o
+login (conferido em `/calendario`, `/integracao-clientes`, `/forum`, `/notificacoes`,
+`/controle-legalizacao`, `/usuarios`, `/referencias`, `/inicio`, `/dashboard`); o destino
+volta inteiro depois do login. As telas exclusivas de admin continuam barradas no servidor
+por `ehAdmin()` antes de qualquer consulta.

@@ -148,7 +148,11 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ ok: true, id: usuarioId, nome, email, area, role });
 }
 
-/** Redefinição de senha feita pelo administrador. */
+/**
+ * Redefinição de senha e/ou troca de e-mail feitas pelo administrador.
+ * O e-mail interessa sobretudo às contas importadas do app antigo, que só
+ * tinham nome: entram com um endereço sugerido e são corrigidas aqui.
+ */
 export async function PATCH(request: NextRequest) {
   const solicitante = await obterPerfilAtual();
 
@@ -165,29 +169,57 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
-  const { usuarioId, novaSenha } = (await request.json().catch(() => ({}))) as {
+  const { usuarioId, novaSenha, novoEmail } = (await request.json().catch(() => ({}))) as {
     usuarioId?: string;
     novaSenha?: string;
+    novoEmail?: string;
   };
+  const email = (novoEmail ?? '').trim().toLowerCase();
 
-  if (!usuarioId || !novaSenha || novaSenha.length < 8) {
-    return NextResponse.json(
-      { erro: 'Informe o usuário e uma senha com pelo menos 8 caracteres.' },
-      { status: 400 },
-    );
+  if (!usuarioId || (!novaSenha && !email)) {
+    return NextResponse.json({ erro: 'Informe o usuário e o que vai mudar.' }, { status: 400 });
+  }
+  if (novaSenha && novaSenha.length < 8) {
+    return NextResponse.json({ erro: 'A senha precisa ter pelo menos 8 caracteres.' }, { status: 400 });
+  }
+  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    return NextResponse.json({ erro: 'E-mail inválido.' }, { status: 400 });
   }
 
-  const { error } = await admin.auth.admin.updateUserById(usuarioId, { password: novaSenha });
-  if (error) return NextResponse.json({ erro: error.message }, { status: 500 });
-
+  // Quem não é admin não mexe na conta de um admin.
   const supabase = await criarClienteServidor();
+  const { data: alvo } = await supabase.from('profiles').select('role').eq('id', usuarioId).maybeSingle();
+  if (!alvo) return NextResponse.json({ erro: 'Usuário não encontrado.' }, { status: 404 });
+  if ((alvo as { role: Role }).role === 'admin' && !ehAdmin(solicitante)) {
+    return NextResponse.json({ erro: 'Apenas administradores alteram a conta de outro administrador.' }, { status: 403 });
+  }
+
+  const { error } = await admin.auth.admin.updateUserById(usuarioId, {
+    ...(novaSenha ? { password: novaSenha } : {}),
+    ...(email ? { email, email_confirm: true } : {}),
+  });
+  if (error) {
+    const jaExiste = error.message.toLowerCase().includes('already');
+    return NextResponse.json(
+      { erro: jaExiste ? 'Já existe um usuário com este e-mail.' : error.message },
+      { status: jaExiste ? 409 : 500 },
+    );
+  }
+  if (email) {
+    const { error: erroPerfil } = await admin.from('profiles').update({ email }).eq('id', usuarioId);
+    if (erroPerfil) return NextResponse.json({ erro: `E-mail do login trocado, mas o perfil falhou: ${erroPerfil.message}` }, { status: 207 });
+  }
+
   await supabase.rpc('registrar_evento_auditoria', {
     p_acao: 'UPDATE',
     p_tabela: 'profiles',
     p_registro_id: usuarioId,
-    p_contexto: { origem: 'painel de usuários', acao: 'senha redefinida pelo administrador' },
-    p_dados_novos: null,
+    p_contexto: {
+      origem: 'painel de usuários',
+      acao: [novaSenha && 'senha redefinida pelo administrador', email && 'e-mail alterado pelo administrador'].filter(Boolean).join('; '),
+    },
+    p_dados_novos: email ? { email } : null,
   });
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, email: email || undefined });
 }

@@ -1,97 +1,70 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 
-import {
-  Columns3,
-  Download,
-  Filter,
-  Plus,
-  RotateCw,
-  Search,
-  Trash2,
-  X,
-} from 'lucide-react';
+import { Download, Filter, Plus, RotateCw, Search, Trash2, Upload, X } from 'lucide-react';
 
-import { Botao, Campo, Selecao, Selo, cn } from '@/components/ui';
+import { Botao, Campo, Selecao, cn } from '@/components/ui';
 import type { DefinicaoColuna } from '@/lib/colunas';
-import type { FiltroColuna } from '@/lib/empresas';
+import { OPERADORES_CONDICAO, regraAtiva, type RegraFiltro } from '@/lib/planilha/filtros';
 
-const OPERADORES: { valor: FiltroColuna['operador']; rotulo: string }[] = [
-  { valor: 'contem', rotulo: 'contém' },
-  { valor: 'igual', rotulo: 'é igual a' },
-  { valor: 'preenchido', rotulo: 'está preenchido' },
-  { valor: 'vazio', rotulo: 'está vazio' },
-  { valor: 'maior', rotulo: 'maior ou igual a' },
-  { valor: 'menor', rotulo: 'menor ou igual a' },
-];
-
+/**
+ * Barra de cima da planilha: pesquisa, filtros combinados, colunas,
+ * importação e exportação. Os filtros de cada coluna moram no cabeçalho.
+ */
 export function BarraFerramentas({
   busca,
   aoBuscar,
   colunas,
-  colunasVisiveis,
-  aoAlternarColuna,
-  filtros,
-  aoMudarFiltros,
+  regras,
+  aoMudarRegras,
+  painelColunas,
   selecionados,
   aoExcluirSelecionados,
   aoLimparSelecao,
   aoNovaEmpresa,
   aoAtualizar,
+  atualizando,
   aoExportar,
   exportando,
-  podeEditar,
+  aoImportar,
+  podeCriar,
   podeExcluir,
   podeExportar,
-  total,
+  podeImportar,
 }: {
   busca: string;
   aoBuscar: (valor: string) => void;
   colunas: DefinicaoColuna[];
-  colunasVisiveis: string[];
-  aoAlternarColuna: (campo: string) => void;
-  filtros: FiltroColuna[];
-  aoMudarFiltros: (filtros: FiltroColuna[]) => void;
+  regras: RegraFiltro[];
+  aoMudarRegras: (regras: RegraFiltro[]) => void;
+  /** O botão "Colunas" já montado (fica junto dos outros). */
+  painelColunas: ReactNode;
   selecionados: string[];
   aoExcluirSelecionados: () => void;
   aoLimparSelecao: () => void;
   aoNovaEmpresa: () => void;
   aoAtualizar: () => void;
+  atualizando: boolean;
   aoExportar: () => void;
   exportando: boolean;
-  podeEditar: boolean;
+  aoImportar: () => void;
+  podeCriar: boolean;
   podeExcluir: boolean;
   podeExportar: boolean;
-  total: number;
+  podeImportar: boolean;
 }) {
-  const [painelColunas, setPainelColunas] = useState(false);
   const [painelFiltros, setPainelFiltros] = useState(false);
+  const ativas = regras.filter(regraAtiva).length;
 
-  function adicionarFiltro() {
+  function adicionarRegra() {
     const primeira = colunas[0];
-    aoMudarFiltros([
-      ...filtros,
-      { campo: primeira.campo, operador: 'contem', valor: '', confidencial: primeira.confidencial },
-    ]);
+    aoMudarRegras([...regras, { campo: primeira.campo, operador: 'contem', valor: '' }]);
   }
 
-  function atualizarFiltro(indice: number, mudancas: Partial<FiltroColuna>) {
-    aoMudarFiltros(
-      filtros.map((filtro, i) => {
-        if (i !== indice) return filtro;
-        const atualizado = { ...filtro, ...mudancas };
-        if (mudancas.campo) {
-          atualizado.confidencial = colunas.find((c) => c.campo === mudancas.campo)?.confidencial;
-        }
-        return atualizado;
-      }),
-    );
+  function atualizarRegra(indice: number, mudancas: Partial<RegraFiltro>) {
+    aoMudarRegras(regras.map((regra, i) => (i === indice ? { ...regra, ...mudancas } : regra)));
   }
-
-  const filtrosAtivos = filtros.filter(
-    (f) => f.valor.trim() !== '' || f.operador === 'vazio' || f.operador === 'preenchido',
-  ).length;
 
   return (
     <div className="sem-impressao space-y-3 border-b border-borda bg-superficie-elevada px-5 py-3.5 sm:px-7">
@@ -99,66 +72,34 @@ export function BarraFerramentas({
         <div className="min-w-[220px] flex-1">
           <Campo
             type="search"
-            placeholder="Buscar por razão social, CNPJ, cidade, sócio…"
+            placeholder="Pesquisar em todas as colunas: razão social, CNPJ, cidade, sócio…"
             value={busca}
             onChange={(e) => aoBuscar(e.target.value)}
             iconeInicial={<Search className="h-4 w-4" />}
-            aria-label="Pesquisa global"
+            aria-label="Pesquisa geral"
           />
         </div>
 
-        <Botao
-          variante={painelFiltros || filtrosAtivos > 0 ? 'sutil' : 'secundario'}
-          onClick={() => setPainelFiltros((v) => !v)}
-        >
+        <Botao variante={painelFiltros || ativas > 0 ? 'sutil' : 'secundario'} onClick={() => setPainelFiltros((v) => !v)}>
           <Filter className="h-4 w-4" />
           Filtros
-          {filtrosAtivos > 0 && (
-            <span className="ml-0.5 rounded-full bg-marca-600 px-1.5 text-[11px] font-semibold text-white">
-              {filtrosAtivos}
-            </span>
+          {ativas > 0 && (
+            <span className="ml-0.5 rounded-full bg-marca-600 px-1.5 text-[11px] font-semibold text-white">{ativas}</span>
           )}
         </Botao>
 
-        <div className="relative">
-          <Botao
-            variante={painelColunas ? 'sutil' : 'secundario'}
-            onClick={() => setPainelColunas((v) => !v)}
-          >
-            <Columns3 className="h-4 w-4" />
-            Colunas
+        {painelColunas}
+
+        <Botao variante="secundario" onClick={aoAtualizar} tamanho="icone" aria-label="Recarregar dados" title="Recarregar">
+          <RotateCw className={cn('h-4 w-4', atualizando && 'animate-spin')} />
+        </Botao>
+
+        {podeImportar && (
+          <Botao variante="secundario" onClick={aoImportar}>
+            <Upload className="h-4 w-4" />
+            Importar
           </Botao>
-
-          {painelColunas && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setPainelColunas(false)} aria-hidden />
-              <div className="animar-surgir absolute right-0 top-full z-20 mt-1.5 max-h-96 w-72 overflow-y-auto rounded-xl border border-borda bg-superficie-elevada p-2 shadow-xl">
-                <p className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-texto-fraco">
-                  Colunas visíveis ({colunasVisiveis.length}/{colunas.length})
-                </p>
-                {colunas.map((coluna) => (
-                  <label
-                    key={coluna.campo}
-                    className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm hover:bg-superficie"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={colunasVisiveis.includes(coluna.campo)}
-                      onChange={() => aoAlternarColuna(coluna.campo)}
-                      className="h-4 w-4 rounded border-borda-forte text-marca-600"
-                    />
-                    <span className="flex-1 truncate text-texto">{coluna.rotulo}</span>
-                    {coluna.confidencial && <Selo tom="alerta" className="text-[10px]">ADM</Selo>}
-                  </label>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-
-        <Botao variante="secundario" onClick={aoAtualizar} tamanho="icone" aria-label="Atualizar dados">
-          <RotateCw className="h-4 w-4" />
-        </Botao>
+        )}
 
         {podeExportar && (
           <Botao variante="secundario" onClick={aoExportar} carregando={exportando}>
@@ -167,7 +108,7 @@ export function BarraFerramentas({
           </Botao>
         )}
 
-        {podeEditar && (
+        {podeCriar && (
           <Botao onClick={aoNovaEmpresa}>
             <Plus className="h-4 w-4" />
             Nova empresa
@@ -177,22 +118,19 @@ export function BarraFerramentas({
 
       {painelFiltros && (
         <div className="animar-surgir space-y-2 rounded-xl border border-borda bg-superficie p-3">
-          {filtros.length === 0 && (
+          {regras.length === 0 && (
             <p className="px-1 py-2 text-sm text-texto-suave">
-              Nenhum filtro. Combine quantos precisar — todos são aplicados juntos.
+              Nenhuma regra. Combine quantas precisar — todas valem juntas, somadas aos filtros dos
+              cabeçalhos das colunas.
             </p>
           )}
 
-          {filtros.map((filtro, indice) => {
-            const semValor = filtro.operador === 'vazio' || filtro.operador === 'preenchido';
+          {regras.map((regra, indice) => {
+            const op = OPERADORES_CONDICAO.find((o) => o.valor === regra.operador);
             return (
               <div key={indice} className="flex flex-wrap items-end gap-2">
                 <div className="min-w-[180px] flex-1">
-                  <Selecao
-                    value={filtro.campo}
-                    onChange={(e) => atualizarFiltro(indice, { campo: e.target.value })}
-                    aria-label="Coluna do filtro"
-                  >
+                  <Selecao value={regra.campo} onChange={(e) => atualizarRegra(indice, { campo: e.target.value })} aria-label="Coluna do filtro">
                     {colunas.map((coluna) => (
                       <option key={coluna.campo} value={coluna.campo}>
                         {coluna.rotulo}
@@ -202,29 +140,37 @@ export function BarraFerramentas({
                   </Selecao>
                 </div>
 
-                <div className="w-44">
+                <div className="w-48">
                   <Selecao
-                    value={filtro.operador}
-                    onChange={(e) =>
-                      atualizarFiltro(indice, { operador: e.target.value as FiltroColuna['operador'] })
-                    }
+                    value={regra.operador}
+                    onChange={(e) => atualizarRegra(indice, { operador: e.target.value as RegraFiltro['operador'] })}
                     aria-label="Operador"
                   >
-                    {OPERADORES.map((op) => (
-                      <option key={op.valor} value={op.valor}>
-                        {op.rotulo}
+                    {OPERADORES_CONDICAO.map((o) => (
+                      <option key={o.valor} value={o.valor}>
+                        {o.rotulo}
                       </option>
                     ))}
                   </Selecao>
                 </div>
 
-                {!semValor && (
+                {!op?.semValor && (
                   <div className="min-w-[160px] flex-1">
                     <Campo
-                      value={filtro.valor}
-                      onChange={(e) => atualizarFiltro(indice, { valor: e.target.value })}
+                      value={regra.valor}
+                      onChange={(e) => atualizarRegra(indice, { valor: e.target.value })}
                       placeholder="valor…"
                       aria-label="Valor do filtro"
+                    />
+                  </div>
+                )}
+                {op?.doisValores && (
+                  <div className="min-w-[140px] flex-1">
+                    <Campo
+                      value={regra.valor2 ?? ''}
+                      onChange={(e) => atualizarRegra(indice, { valor2: e.target.value })}
+                      placeholder="e…"
+                      aria-label="Segundo valor"
                     />
                   </div>
                 )}
@@ -232,8 +178,8 @@ export function BarraFerramentas({
                 <Botao
                   variante="fantasma"
                   tamanho="icone"
-                  onClick={() => aoMudarFiltros(filtros.filter((_, i) => i !== indice))}
-                  aria-label="Remover filtro"
+                  onClick={() => aoMudarRegras(regras.filter((_, i) => i !== indice))}
+                  aria-label="Remover regra"
                 >
                   <X className="h-4 w-4" />
                 </Botao>
@@ -242,47 +188,35 @@ export function BarraFerramentas({
           })}
 
           <div className="flex gap-2 pt-1">
-            <Botao variante="secundario" tamanho="sm" onClick={adicionarFiltro}>
+            <Botao variante="secundario" tamanho="sm" onClick={adicionarRegra}>
               <Plus className="h-3.5 w-3.5" />
-              Adicionar filtro
+              Adicionar regra
             </Botao>
-            {filtros.length > 0 && (
-              <Botao variante="fantasma" tamanho="sm" onClick={() => aoMudarFiltros([])}>
-                Limpar tudo
+            {regras.length > 0 && (
+              <Botao variante="fantasma" tamanho="sm" onClick={() => aoMudarRegras([])}>
+                Limpar regras
               </Botao>
             )}
           </div>
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-        <p className="text-texto-suave">
-          <strong className="tabular-nums text-texto">{total.toLocaleString('pt-BR')}</strong>{' '}
-          {total === 1 ? 'empresa' : 'empresas'}
-          {(busca || filtrosAtivos > 0) && ' após filtros'}
-        </p>
-
-        {selecionados.length > 0 && (
-          <div
-            className={cn(
-              'animar-surgir flex flex-wrap items-center gap-2 rounded-lg border border-marca-200 bg-marca-50 px-3 py-1.5',
-            )}
-          >
-            <span className="text-sm font-medium text-marca-800">
-              {selecionados.length} selecionada{selecionados.length > 1 ? 's' : ''}
-            </span>
-            {podeExcluir && (
-              <Botao variante="perigo" tamanho="sm" onClick={aoExcluirSelecionados}>
-                <Trash2 className="h-3.5 w-3.5" />
-                Excluir
-              </Botao>
-            )}
-            <Botao variante="fantasma" tamanho="sm" onClick={aoLimparSelecao}>
-              Limpar seleção
+      {selecionados.length > 0 && (
+        <div className="animar-surgir flex flex-wrap items-center gap-2 rounded-lg border border-marca-200 bg-marca-50 px-3 py-1.5">
+          <span className="text-sm font-medium text-marca-800">
+            {selecionados.length} selecionada{selecionados.length > 1 ? 's' : ''}
+          </span>
+          {podeExcluir && (
+            <Botao variante="perigo" tamanho="sm" onClick={aoExcluirSelecionados}>
+              <Trash2 className="h-3.5 w-3.5" />
+              Excluir
             </Botao>
-          </div>
-        )}
-      </div>
+          )}
+          <Botao variante="fantasma" tamanho="sm" onClick={aoLimparSelecao}>
+            Limpar seleção
+          </Botao>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,13 +1,14 @@
 /**
- * CONTROLE_GERAL — processos de legalização.
+ * Controle Legalização (antigo CONTROLE_GERAL) — processos de legalização.
  *
- * Espelha a aba homônima da PLANILHA LEGALIZACAO.xlsx. As colunas, a ordem
- * e as listas de opções vieram do arquivo; o que era formatação condicional
- * virou `situacaoProcesso()`.
+ * Espelha a aba CONTROLE_GERAL da PLANILHA LEGALIZACAO.xlsx. As colunas, a
+ * ordem e as listas de opções vieram do arquivo; o que era formatação
+ * condicional virou `situacaoProcesso()`.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import type { DefinicaoColuna, TipoColuna } from '@/lib/colunas';
 import type { Processo, SituacaoProcesso } from '@/types/banco';
 
 /* -------------------------------------------------------------------------- */
@@ -43,6 +44,30 @@ export const COLUNAS_PROCESSO: ColunaProcesso[] = [
   { campo: 'observacoes', rotulo: 'Observações', tipo: 'longo', largura: 280, padrao: true },
   { campo: 'indicador', rotulo: 'Indicador', tipo: 'combo', grupo: 'processo_indicador', largura: 170, padrao: true },
 ];
+
+const TIPO_PLANILHA: Record<TipoCampoProcesso, TipoColuna> = {
+  texto: 'texto',
+  longo: 'longo',
+  data: 'data',
+  combo: 'status',
+  empresa: 'texto',
+  cnpj: 'cnpj',
+  pessoa: 'texto',
+};
+
+/** As colunas nativas no formato da planilha — base para fórmulas e filtros. */
+export function colunasProcessoComoDefinicao(): DefinicaoColuna[] {
+  return COLUNAS_PROCESSO.map((c) => ({
+    campo: c.campo,
+    rotulo: c.rotulo,
+    tipo: TIPO_PLANILHA[c.tipo],
+    largura: c.largura,
+    editavel: c.campo !== 'ultima_atualizacao',
+    padrao: c.padrao,
+    fixa: c.fixa,
+    origem: c.ajuda,
+  }));
+}
 
 export const GRUPOS_OPCOES = [
   'processo_status',
@@ -128,6 +153,9 @@ export interface FiltroProcessos {
   empresaId?: string;
   /** 'abertos' esconde o que já foi encerrado; 'atrasados' e 'atencao' filtram prazo. */
   recorte?: 'todos' | 'abertos' | 'atrasados' | 'atencao' | 'encerrados';
+  /** Prazo dentro do período (clicar num mês do gráfico de vencimentos). */
+  prazoDe?: string;
+  prazoAte?: string;
   ordenarPor?: string;
   ascendente?: boolean;
 }
@@ -168,6 +196,8 @@ export async function buscarProcessos(
   if (filtro.tipoServico) query = query.eq('tipo_servico', filtro.tipoServico);
   if (filtro.responsavelId) query = query.eq('responsavel_id', filtro.responsavelId);
   if (filtro.empresaId) query = query.eq('empresa_id', filtro.empresaId);
+  if (filtro.prazoDe) query = query.gte('prazo', filtro.prazoDe);
+  if (filtro.prazoAte) query = query.lte('prazo', filtro.prazoAte);
 
   // Os recortes de prazo são os mesmos do painel, para que clicar num
   // indicador e filtrar a tabela levem sempre ao mesmo conjunto.
@@ -202,6 +232,32 @@ export async function buscarProcessos(
   const { data, error } = await query.limit(5000);
   if (error) throw new Error(error.message);
   return (data ?? []) as unknown as Processo[];
+}
+
+/** Primeiro e último dia de um mês, para o filtro por mês do gráfico. */
+export function periodoDoMes(ano: number, mes: number): { prazoDe: string; prazoAte: string } {
+  const ultimo = new Date(ano, mes, 0).getDate();
+  const m = String(mes).padStart(2, '0');
+  return { prazoDe: `${ano}-${m}-01`, prazoAte: `${ano}-${m}-${String(ultimo).padStart(2, '0')}` };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Campos adicionais                                                           */
+/* -------------------------------------------------------------------------- */
+
+/** Par "rótulo → valor" digitado livremente num processo. */
+export interface CampoLivre {
+  rotulo: string;
+  valor: string;
+}
+
+/** Os campos livres moram em `campos_extras.campos_livres`. */
+export function camposLivres(processo: Pick<Processo, 'campos_extras'> | null | undefined): CampoLivre[] {
+  const lista = (processo?.campos_extras as { campos_livres?: unknown } | undefined)?.campos_livres;
+  if (!Array.isArray(lista)) return [];
+  return lista
+    .filter((c): c is CampoLivre => Boolean(c) && typeof c === 'object' && typeof (c as CampoLivre).rotulo === 'string')
+    .map((c) => ({ rotulo: c.rotulo, valor: String(c.valor ?? '') }));
 }
 
 /** Converte o que o editor devolve para o formato da coluna. */

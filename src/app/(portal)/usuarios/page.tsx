@@ -19,7 +19,7 @@ export default async function PaginaUsuarios() {
   const [{ data: usuarios }, { data: catalogo }, { data: concessoes }, { data: colunas }] =
     await Promise.all([
       supabase.from('profiles').select('*').order('nome'),
-      supabase.from('permissoes_catalogo').select('*').order('ordem'),
+      supabase.from('permissoes_catalogo').select('*').eq('ativo', true).order('ordem'),
       supabase.from('usuario_permissoes').select('usuario_id, chave'),
       supabase.from('usuario_colunas').select('usuario_id, coluna').eq('tabela', 'legalizacao_empresas'),
     ]);

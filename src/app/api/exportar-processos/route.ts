@@ -2,24 +2,28 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import ExcelJS from 'exceljs';
 
+import { colunaDaEquipe } from '@/lib/colunas';
 import { formatarCnpj } from '@/lib/normalizacao';
 import { PERMISSOES, pode } from '@/lib/permissoes';
+import { calcularFormulas, textoDaCelula, type LinhaPlanilha } from '@/lib/planilha/valores';
 import {
   COLUNAS_PROCESSO,
   buscarProcessos,
+  camposLivres,
+  colunasProcessoComoDefinicao,
   situacaoProcesso,
   type FiltroProcessos,
 } from '@/lib/processos';
 import { criarClienteServidor, obterPerfilAtual } from '@/lib/supabase/server';
-import type { EstatisticasProcessos } from '@/types/banco';
+import type { EstatisticasProcessos, PlanilhaColuna } from '@/types/banco';
 
 export const runtime = 'nodejs';
 
 /**
- * Exporta o Controle Geral no mesmo formato do arquivo de origem: a aba
- * CONTROLE_GERAL com as mesmas 13 colunas na mesma ordem, mais as abas de
- * painel. Quem preferir continuar no Excel consegue — e quem recebe o
- * arquivo reconhece o que está vendo.
+ * Exporta o Controle Legalização no mesmo formato do arquivo de origem: a
+ * aba CONTROLE_GERAL com as mesmas 13 colunas na mesma ordem (mais os campos
+ * criados pelo time no fim), e as abas de painel. Quem preferir continuar no
+ * Excel consegue — e quem recebe o arquivo reconhece o que está vendo.
  */
 export async function POST(request: NextRequest) {
   const perfil = await obterPerfilAtual();
@@ -34,10 +38,13 @@ export async function POST(request: NextRequest) {
   const filtro = (await request.json().catch(() => ({}))) as FiltroProcessos;
   const supabase = await criarClienteServidor();
 
-  const [processos, { data: stats }] = await Promise.all([
+  const [processos, { data: stats }, { data: definicoes }] = await Promise.all([
     buscarProcessos(supabase, filtro),
     supabase.rpc('processos_estatisticas'),
+    supabase.from('planilha_colunas').select('*').eq('tabela', 'legalizacao_processos').order('ordem'),
   ]);
+  const camposEquipe = ((definicoes ?? []) as PlanilhaColuna[]).filter((d) => d.personalizada && !d.oculta).map(colunaDaEquipe);
+  const colunasFormula = [...colunasProcessoComoDefinicao(), ...camposEquipe];
 
   const estatisticas = (stats ?? {}) as Partial<EstatisticasProcessos>;
 
@@ -52,11 +59,15 @@ export async function POST(request: NextRequest) {
     views: [{ state: 'frozen', ySplit: 1 }],
   });
 
-  planilha.columns = COLUNAS_PROCESSO.map((coluna) => ({
-    header: coluna.rotulo.toUpperCase(),
-    key: coluna.campo,
-    width: Math.max(12, Math.min(48, Math.round(coluna.largura / 7))),
-  }));
+  planilha.columns = [
+    ...COLUNAS_PROCESSO.map((coluna) => ({
+      header: coluna.rotulo.toUpperCase(),
+      key: coluna.campo,
+      width: Math.max(12, Math.min(48, Math.round(coluna.largura / 7))),
+    })),
+    ...camposEquipe.map((campo) => ({ header: campo.rotulo.toUpperCase(), key: `x:${campo.campo}`, width: 20 })),
+    { header: 'CAMPOS ADICIONAIS', key: 'campos_livres', width: 40 },
+  ];
 
   const cabecalho = planilha.getRow(1);
   cabecalho.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
@@ -67,7 +78,15 @@ export async function POST(request: NextRequest) {
   });
 
   for (const processo of processos) {
+    const formulas = camposEquipe.some((c) => c.tipo === 'formula')
+      ? calcularFormulas(processo as unknown as LinhaPlanilha, colunasFormula)
+      : undefined;
+    const extras = Object.fromEntries(
+      camposEquipe.map((campo) => [`x:${campo.campo}`, textoDaCelula(processo as unknown as LinhaPlanilha, campo, formulas) || null]),
+    );
     const linha = planilha.addRow({
+      ...extras,
+      campos_livres: camposLivres(processo).map((c) => `${c.rotulo}: ${c.valor}`).join(' | ') || null,
       status: processo.status,
       empresa: processo.empresa,
       cnpj: processo.cnpj ? formatarCnpj(processo.cnpj) : null,
@@ -102,7 +121,7 @@ export async function POST(request: NextRequest) {
   colunaPrazo.numFmt = 'dd/mm/yyyy';
   colunaAtualizacao.numFmt = 'dd/mm/yyyy hh:mm';
 
-  planilha.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: COLUNAS_PROCESSO.length } };
+  planilha.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: COLUNAS_PROCESSO.length + camposEquipe.length + 1 } };
 
   /* ---------------------------------------------------------------- */
   /* Painéis — as mesmas três abas do arquivo original                  */
@@ -138,7 +157,7 @@ export async function POST(request: NextRequest) {
   const info = workbook.addWorksheet('Informações');
   info.columns = [{ width: 28 }, { width: 70 }];
   info.addRows([
-    ['PortalMPC — Controle Geral'],
+    ['PortalMPC — Controle Legalização'],
     [],
     ['Gerado em', new Date().toLocaleString('pt-BR')],
     ['Usuário', `${perfil.nome} (${perfil.email})`],
@@ -147,6 +166,8 @@ export async function POST(request: NextRequest) {
     ['Pesquisa aplicada', filtro.busca || '—'],
     ['Órgão', filtro.orgao || '—'],
     ['Tipo de serviço', filtro.tipoServico || '—'],
+    ['Status', filtro.status || '—'],
+    ['Prazo entre', filtro.prazoDe ? `${filtro.prazoDe} e ${filtro.prazoAte}` : '—'],
     ['Em aberto', estatisticas.abertos ?? 0],
     ['Atrasados', estatisticas.atrasados ?? 0],
     ['Vencem em até 3 dias', estatisticas.atencao ?? 0],
@@ -163,7 +184,7 @@ export async function POST(request: NextRequest) {
   });
 
   const buffer = await workbook.xlsx.writeBuffer();
-  const nome = `portalmpc-controle-geral-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  const nome = `portalmpc-controle-legalizacao-${new Date().toISOString().slice(0, 10)}.xlsx`;
 
   return new NextResponse(buffer as ArrayBuffer, {
     headers: {

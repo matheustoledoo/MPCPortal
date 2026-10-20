@@ -10,11 +10,13 @@ import { COLUNAS_GERAIS } from '@/lib/colunas';
 import {
   PERMISSOES,
   pode,
+  podeCriarEmpresas,
   podeEditarLegalizacao,
   podeExcluirLegalizacao,
   podeLerLegalizacao,
   rotuloPeriodicidade,
 } from '@/lib/permissoes';
+import { carregarConfiguracaoPlanilha, parametrosDaPlanilha } from '@/lib/planilha/servidor';
 import { criarClienteServidor, obterPerfilAtual } from '@/lib/supabase/server';
 
 export const metadata = { title: 'Planilha Legalização' };
@@ -22,25 +24,27 @@ export const metadata = { title: 'Planilha Legalização' };
 export default async function PaginaLegalizacao({
   searchParams,
 }: {
-  searchParams: Promise<{ busca?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const perfil = await obterPerfilAtual();
   if (!perfil) redirect('/login');
   if (!podeLerLegalizacao(perfil)) redirect('/sem-acesso');
 
-  const { busca } = await searchParams;
+  const parametros = parametrosDaPlanilha(await searchParams);
   const supabase = await criarClienteServidor();
-  const responsaveis = await responsaveisPorColuna(supabase, perfil.id, rotuloPeriodicidade);
+  const [responsaveis, configuracao] = await Promise.all([
+    responsaveisPorColuna(supabase, perfil.id, rotuloPeriodicidade),
+    carregarConfiguracaoPlanilha(supabase, 'legalizacao', ['legalizacao_empresas']),
+  ]);
 
   const minhasColunas = perfil.colunasEditaveis;
-  const rotuloDe = (campo: string) =>
-    COLUNAS_GERAIS.find((c) => c.campo === campo)?.rotulo ?? campo;
+  const rotuloDe = (campo: string) => COLUNAS_GERAIS.find((c) => c.campo === campo)?.rotulo ?? campo;
 
   return (
     <>
       <CabecalhoPagina
         titulo="Planilha Legalização"
-        descricao="Base geral consolidada das duas planilhas de trabalho. Duplo clique numa célula para editar."
+        descricao="Base geral consolidada. Duplo clique numa célula para editar; a setinha de cada coluna filtra e ordena como no Excel."
         acoes={
           <Selo tom="marca">
             <Info className="h-3 w-3" />
@@ -58,14 +62,24 @@ export default async function PaginaLegalizacao({
       )}
 
       <TabelaPlanilha
+        contexto="legalizacao"
         podeVerAdministrativo={false}
         podeEditar={podeEditarLegalizacao(perfil)}
+        podeCriar={podeCriarEmpresas(perfil)}
         podeExcluir={podeExcluirLegalizacao(perfil)}
         podeExportar={pode(perfil, PERMISSOES.exportarLegalizacao)}
-        buscaInicial={busca ?? ''}
+        podeImportar={pode(perfil, PERMISSOES.importarLegalizacao)}
+        podePersonalizarColunas={pode(perfil, PERMISSOES.personalizarColunas)}
+        atalhos={{
+          processos: pode(perfil, PERMISSOES.telaProcessos),
+          integracao: pode(perfil, PERMISSOES.telaIntegracao),
+          calendario: pode(perfil, PERMISSOES.telaCalendario),
+        }}
         colunasEditaveis={minhasColunas}
         responsaveisPorColuna={responsaveis}
-        contexto="legalizacao"
+        definicoesIniciais={configuracao.definicoes}
+        preferenciasIniciais={configuracao.preferencias}
+        parametros={parametros}
       />
     </>
   );

@@ -2,13 +2,25 @@
 
 import { useEffect, useState } from 'react';
 
-import { Lock, Save, X } from 'lucide-react';
+import Link from 'next/link';
+import { CalendarDays, ClipboardList, Handshake, Lock, Save, X } from 'lucide-react';
 
 import { AreaTexto, Botao, Campo, Selecao, Selo, cn, useAvisos } from '@/components/ui';
 import { COLUNAS_ADMINISTRATIVAS, COLUNAS_GERAIS, type DefinicaoColuna } from '@/lib/colunas';
 import { prepararValor, type LinhaEmpresa } from '@/lib/empresas';
 import { formatarParaExibicao, mascararPorTipo } from '@/lib/mascaras';
 import { cnpjValido, normalizarCnpj, normalizarData } from '@/lib/normalizacao';
+import { textoDaCelula, type LinhaPlanilha, type ResultadoFormula } from '@/lib/planilha/valores';
+
+/** Chave do estado do formulário para as colunas da equipe. */
+const chaveExtra = (coluna: DefinicaoColuna) => `extra:${coluna.confidencial ? 'adm' : 'geral'}:${coluna.campo}`;
+
+/** Telas ligadas à empresa que a pessoa pode abrir. */
+export interface AtalhosEmpresa {
+  processos?: boolean;
+  integracao?: boolean;
+  calendario?: boolean;
+}
 
 /**
  * Formulário lateral para criar ou editar uma empresa por completo.
@@ -20,6 +32,9 @@ export function PainelEmpresa({
   podeVerAdministrativo,
   podeEditar,
   colunasEditaveis = [],
+  colunasEquipe = [],
+  resultadosFormula,
+  atalhos = {},
   aoFechar,
   aoSalvar,
 }: {
@@ -30,6 +45,10 @@ export function PainelEmpresa({
   podeEditar: boolean;
   /** Restrição pessoal de colunas. Vazio = sem restrição. */
   colunasEditaveis?: string[];
+  /** Colunas criadas pela equipe (inclusive as de fórmula, só leitura). */
+  colunasEquipe?: DefinicaoColuna[];
+  resultadosFormula?: Record<string, ResultadoFormula>;
+  atalhos?: AtalhosEmpresa;
   aoFechar: () => void;
   aoSalvar: (
     gerais: Record<string, unknown>,
@@ -68,10 +87,21 @@ export function PainelEmpresa({
               : String(bruto);
       }
     }
+    for (const coluna of colunasEquipe) {
+      if (coluna.tipo === 'formula' || (coluna.confidencial && !podeVerAdministrativo)) continue;
+      const origem = coluna.confidencial ? empresa?.administrativo?.campos_extras : empresa?.campos_extras;
+      const bruto = origem ? (origem as Record<string, unknown>)[coluna.campo] : null;
+      iniciais[chaveExtra(coluna)] =
+        coluna.tipo === 'data'
+          ? formatarParaExibicao('data', bruto)
+          : bruto === null || bruto === undefined
+            ? ''
+            : String(bruto);
+    }
     setValores(iniciais);
     setErros({});
     setAba('gerais');
-  }, [aberto, empresa, podeVerAdministrativo]);
+  }, [aberto, empresa, podeVerAdministrativo, colunasEquipe]);
 
   if (!aberto) return null;
 
@@ -104,6 +134,14 @@ export function PainelEmpresa({
       if (coluna.tipo === 'numero' && coluna.campo === 'dia_vencimento') {
         const n = Number(valor);
         if (!Number.isFinite(n) || n < 1 || n > 31) novos[coluna.campo] = 'Dia entre 1 e 31.';
+      }
+    }
+
+    for (const coluna of colunasEquipe) {
+      const valor = valores[chaveExtra(coluna)]?.trim();
+      if (valor && coluna.tipo === 'data' && !normalizarData(valor)) {
+        avisar('alerta', `${coluna.rotulo}: use dd/mm/aaaa.`);
+        return false;
       }
     }
 
@@ -145,6 +183,27 @@ export function PainelEmpresa({
         }
       }
 
+      // Colunas da equipe: mescla com o que já existe (chaves de colunas
+      // apagadas continuam guardadas).
+      const extrasGerais = { ...(empresa?.campos_extras ?? {}) };
+      const extrasAdm = { ...((empresa?.administrativo?.campos_extras as Record<string, unknown>) ?? {}) };
+      let mexeuGerais = false;
+      let mexeuAdm = false;
+      for (const coluna of colunasEquipe) {
+        if (coluna.tipo === 'formula') continue;
+        if (coluna.confidencial && !podeVerAdministrativo) continue;
+        if (!coluna.confidencial && colunasEditaveis.length > 0 && !colunasEditaveis.includes(coluna.campo)) continue;
+        const valor = prepararValor(coluna.campo, coluna.tipo, valores[chaveExtra(coluna)] ?? '');
+        const destino = coluna.confidencial ? extrasAdm : extrasGerais;
+        if ((destino[coluna.campo] ?? null) === valor) continue;
+        if (valor === null) delete destino[coluna.campo];
+        else destino[coluna.campo] = valor;
+        if (coluna.confidencial) mexeuAdm = true;
+        else mexeuGerais = true;
+      }
+      if (mexeuGerais || !empresa) gerais.campos_extras = extrasGerais;
+      if (mexeuAdm) administrativos.campos_extras = extrasAdm;
+
       await aoSalvar(gerais, administrativos);
     } catch (e) {
       avisar('erro', e instanceof Error ? e.message : 'Não foi possível salvar.');
@@ -184,6 +243,35 @@ export function PainelEmpresa({
             <X className="h-4 w-4" />
           </button>
         </header>
+
+        {empresa && (atalhos.processos || atalhos.integracao || atalhos.calendario) && (
+          <nav className="flex flex-wrap gap-2 border-b border-borda px-5 py-2.5" aria-label="Atalhos da empresa">
+            {atalhos.processos && (
+              <Link
+                href={`/controle-legalizacao?empresa=${empresa.id}`}
+                className="inline-flex items-center gap-1.5 rounded-full bg-superficie px-3 py-1 text-xs font-medium text-texto-suave ring-1 ring-inset ring-borda hover:text-marca-800 hover:ring-marca-300"
+              >
+                <ClipboardList className="h-3.5 w-3.5" /> Processos
+              </Link>
+            )}
+            {atalhos.integracao && (
+              <Link
+                href={`/integracao-clientes?empresa=${empresa.id}`}
+                className="inline-flex items-center gap-1.5 rounded-full bg-superficie px-3 py-1 text-xs font-medium text-texto-suave ring-1 ring-inset ring-borda hover:text-marca-800 hover:ring-marca-300"
+              >
+                <Handshake className="h-3.5 w-3.5" /> Integração do cliente
+              </Link>
+            )}
+            {atalhos.calendario && (
+              <Link
+                href="/calendario?aba=lista"
+                className="inline-flex items-center gap-1.5 rounded-full bg-superficie px-3 py-1 text-xs font-medium text-texto-suave ring-1 ring-inset ring-borda hover:text-marca-800 hover:ring-marca-300"
+              >
+                <CalendarDays className="h-3.5 w-3.5" /> Calendário
+              </Link>
+            )}
+          </nav>
+        )}
 
         {podeVerAdministrativo && (
           <div className="flex gap-1 border-b border-borda px-5 pt-3">
@@ -288,6 +376,84 @@ export function PainelEmpresa({
               />
             );
           })}
+
+          {(() => {
+            const daAba = colunasEquipe.filter((c) =>
+              aba === 'gerais' ? !c.confidencial : c.confidencial && podeVerAdministrativo,
+            );
+            if (daAba.length === 0) return null;
+            return (
+              <div className="space-y-3 rounded-xl border border-sky-200 bg-sky-50/40 p-3.5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-texto-suave">Colunas da equipe</p>
+                {daAba.map((coluna) => {
+                  if (coluna.tipo === 'formula') {
+                    const texto = empresa
+                      ? textoDaCelula(empresa as unknown as LinhaPlanilha, coluna, resultadosFormula)
+                      : '';
+                    return (
+                      <div key={coluna.campo}>
+                        <p className="mb-1 text-sm font-medium text-texto-suave">{coluna.rotulo}</p>
+                        <p className="rounded-lg border border-borda bg-white px-3 py-2 text-sm text-texto">
+                          {texto || <span className="text-texto-fraco">calculado depois de salvar</span>}
+                        </p>
+                        <p className="mt-1 font-mono text-[11px] text-texto-fraco">{coluna.formula}</p>
+                      </div>
+                    );
+                  }
+                  const chave = chaveExtra(coluna);
+                  const bloqueada =
+                    !podeEditar ||
+                    salvando ||
+                    (!coluna.confidencial && colunasEditaveis.length > 0 && !colunasEditaveis.includes(coluna.campo));
+                  if (coluna.tipo === 'longo') {
+                    return (
+                      <AreaTexto
+                        key={chave}
+                        rotulo={coluna.rotulo}
+                        value={valores[chave] ?? ''}
+                        onChange={(e) => definir(chave, e.target.value, coluna.tipo)}
+                        disabled={bloqueada}
+                      />
+                    );
+                  }
+                  if (coluna.tipo === 'booleano') {
+                    return (
+                      <label key={chave} className="flex items-center gap-2.5 py-1">
+                        <input
+                          type="checkbox"
+                          checked={valores[chave] === 'true'}
+                          onChange={(e) => setValores((v) => ({ ...v, [chave]: String(e.target.checked) }))}
+                          disabled={bloqueada}
+                          className="h-4 w-4 rounded border-borda-forte text-marca-600"
+                        />
+                        <span className="text-sm font-medium text-texto-suave">{coluna.rotulo}</span>
+                      </label>
+                    );
+                  }
+                  return (
+                    <div key={chave}>
+                      <Campo
+                        rotulo={coluna.rotulo}
+                        value={valores[chave] ?? ''}
+                        list={coluna.opcoes ? `opcoes-painel-${coluna.campo}` : undefined}
+                        onChange={(e) => definir(chave, e.target.value, coluna.tipo)}
+                        dica={coluna.descricao ?? undefined}
+                        placeholder={coluna.tipo === 'data' ? 'dd/mm/aaaa' : undefined}
+                        disabled={bloqueada}
+                      />
+                      {coluna.opcoes && (
+                        <datalist id={`opcoes-painel-${coluna.campo}`}>
+                          {coluna.opcoes.map((o) => (
+                            <option key={o} value={o} />
+                          ))}
+                        </datalist>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
 
           {empresa && aba === 'gerais' && (
             <div className="space-y-2 rounded-lg border border-borda bg-superficie p-3.5 text-xs">

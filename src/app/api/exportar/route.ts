@@ -2,27 +2,24 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import ExcelJS from 'exceljs';
 
-import { COLUNAS_GERAIS, TODAS_COLUNAS, type DefinicaoColuna } from '@/lib/colunas';
+import { colunasPara, mesclarColunas, type DefinicaoColuna } from '@/lib/colunas';
+import { carregarTodasEmpresas, type LinhaEmpresa } from '@/lib/empresas';
 import { formatarCnpj } from '@/lib/normalizacao';
+import { lerData } from '@/lib/planilha/formulas';
+import { calcularFormulas, textoDaCelula, valorBruto, type LinhaPlanilha } from '@/lib/planilha/valores';
 import { criarClienteServidor, obterPerfilAtual } from '@/lib/supabase/server';
 import { PERMISSOES, ehAdmin, pode, podeLerLegalizacao } from '@/lib/permissoes';
-import type { DadosAdministrativos, Empresa } from '@/types/banco';
+import type { PlanilhaColuna } from '@/types/banco';
 
 export const runtime = 'nodejs';
-
-interface FiltroExportacao {
-  campo: string;
-  operador: string;
-  valor: string;
-  confidencial?: boolean;
-}
 
 /**
  * Exportação para Excel com permissão aplicada NO SERVIDOR.
  *
- * O cliente não escolhe quais colunas pode exportar: mesmo que peça as
- * administrativas, elas só entram na planilha se o perfil for admin. E, ainda
- * que passassem por aqui, a RLS devolveria null no join.
+ * O navegador manda só a lista de ids (na ordem da tela) e as colunas
+ * visíveis. Os dados são buscados de novo aqui, com a RLS de quem pediu: um
+ * id que a pessoa não pode ver simplesmente não vem, e colunas
+ * administrativas só entram para administradores.
  */
 export async function POST(request: NextRequest) {
   const perfil = await obterPerfilAtual();
@@ -33,101 +30,57 @@ export async function POST(request: NextRequest) {
   if (!podeLerLegalizacao(perfil)) {
     return NextResponse.json({ erro: 'Sem permissão para acessar esta base.' }, { status: 403 });
   }
+
+  const corpo = (await request.json().catch(() => ({}))) as {
+    contexto?: 'legalizacao' | 'administrativo';
+    ids?: string[];
+    colunas?: string[];
+    resumoFiltros?: string;
+  };
+
+  const administrador = ehAdmin(perfil);
+  const contexto = corpo.contexto === 'administrativo' && administrador ? 'administrativo' : 'legalizacao';
+
   // Ler e baixar são coisas diferentes: exportar leva a base inteira para fora
   // do portal, então tem permissão própria.
-  if (!pode(perfil, PERMISSOES.exportarLegalizacao)) {
+  const permissao = contexto === 'administrativo' ? PERMISSOES.exportarAdministrativo : PERMISSOES.exportarLegalizacao;
+  if (!pode(perfil, permissao)) {
     return NextResponse.json(
       { erro: 'Você não tem permissão para exportar. Peça "Exportar Legalização" ao administrador.' },
       { status: 403 },
     );
   }
 
-  const corpo = (await request.json().catch(() => ({}))) as {
-    busca?: string;
-    filtros?: FiltroExportacao[];
-    ordenarPor?: string;
-    ascendente?: boolean;
-    colunas?: string[];
-    contexto?: string;
-  };
-
-  const administrador = ehAdmin(perfil);
-
-  // Ponto central da regra: o universo de colunas permitidas vem do perfil.
-  const permitidas: DefinicaoColuna[] = administrador ? TODAS_COLUNAS : COLUNAS_GERAIS;
-  const pedidas = corpo.colunas?.length
-    ? permitidas.filter((c) => corpo.colunas!.includes(c.campo))
-    : permitidas.filter((c) => c.padrao);
-  const colunas = pedidas.length > 0 ? pedidas : permitidas.filter((c) => c.padrao);
-
   const supabase = await criarClienteServidor();
+  const incluiAdm = contexto === 'administrativo';
 
-  const precisaAdministrativo = administrador && colunas.some((c) => c.confidencial);
-  const filtrosAdmin = (corpo.filtros ?? []).filter((f) => f.confidencial);
-
-  let query = supabase
-    .from('legalizacao_empresas')
-    .select(
-      administrador
-        ? filtrosAdmin.length > 0
-          ? '*, legalizacao_dados_administrativos!inner(*)'
-          : '*, legalizacao_dados_administrativos(*)'
-        : '*',
-    );
-
-  const termo = (corpo.busca ?? '').replace(/[,()\\]/g, ' ').trim();
-  if (termo) {
-    const digitos = termo.replace(/\D/g, '');
-    query = query.or(
-      [
-        `razao_social.ilike.%${termo}%`,
-        digitos ? `cnpj.ilike.%${digitos}%` : `cnpj.ilike.%${termo}%`,
-        `cidade.ilike.%${termo}%`,
-        `socio.ilike.%${termo}%`,
-        `codigo.ilike.%${termo}%`,
-      ].join(','),
-    );
+  const [{ data: definicoes }, linhas] = await Promise.all([
+    supabase
+      .from('planilha_colunas')
+      .select('*')
+      .in('tabela', incluiAdm ? ['legalizacao_empresas', 'legalizacao_dados_administrativos'] : ['legalizacao_empresas']),
+    carregarTodasEmpresas(supabase, incluiAdm).catch((e: Error) => e),
+  ]);
+  if (linhas instanceof Error) {
+    return NextResponse.json({ erro: `Falha ao consultar: ${linhas.message}` }, { status: 500 });
   }
 
-  for (const filtro of corpo.filtros ?? []) {
-    // Um usuário comum não pode nem filtrar por campo confidencial.
-    if (filtro.confidencial && !administrador) continue;
+  // O universo de colunas permitidas vem do perfil, não do pedido.
+  const todas = mesclarColunas(colunasPara(incluiAdm), (definicoes ?? []) as PlanilhaColuna[]);
+  const pedidas = (corpo.colunas ?? []).map((campo) => todas.find((c) => c.campo === campo)).filter(Boolean) as DefinicaoColuna[];
+  const colunas = pedidas.length ? pedidas : todas.filter((c) => c.padrao);
 
-    const coluna = filtro.confidencial
-      ? `legalizacao_dados_administrativos.${filtro.campo}`
-      : filtro.campo;
-
-    switch (filtro.operador) {
-      case 'contem': query = query.ilike(coluna, `%${filtro.valor}%`); break;
-      case 'igual': query = query.eq(coluna, filtro.valor); break;
-      case 'vazio': query = query.is(coluna, null); break;
-      case 'preenchido': query = query.not(coluna, 'is', null); break;
-      case 'maior': query = query.gte(coluna, filtro.valor); break;
-      case 'menor': query = query.lte(coluna, filtro.valor); break;
-    }
-  }
-
-  const ordenavel = COLUNAS_GERAIS.some((c) => c.campo === corpo.ordenarPor)
-    ? corpo.ordenarPor!
-    : 'razao_social';
-  query = query.order(ordenavel, { ascending: corpo.ascendente ?? true, nullsFirst: false });
-
-  // Limite de segurança: a base tem centenas de linhas, não milhões.
-  const { data, error } = await query.limit(20000);
-  if (error) {
-    return NextResponse.json({ erro: `Falha ao consultar: ${error.message}` }, { status: 500 });
-  }
-
-  // O `select` varia conforme o perfil, então o tipo é afirmado aqui.
-  const registros = (data ?? []) as unknown as (Empresa & {
-    legalizacao_dados_administrativos?: DadosAdministrativos | DadosAdministrativos[] | null;
-  })[];
+  // Mantém a ordem e o recorte da tela; sem lista, exporta tudo.
+  const porId = new Map(linhas.map((l) => [l.id, l]));
+  const registros: LinhaEmpresa[] = corpo.ids?.length
+    ? corpo.ids.map((id) => porId.get(id)).filter((l): l is LinhaEmpresa => Boolean(l))
+    : linhas;
 
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'PortalMPC';
   workbook.created = new Date();
 
-  const planilha = workbook.addWorksheet('Legalização', {
+  const planilha = workbook.addWorksheet(contexto === 'administrativo' ? 'Planilha ADM' : 'Legalização', {
     views: [{ state: 'frozen', ySplit: 1, xSplit: 1 }],
   });
 
@@ -146,80 +99,62 @@ export async function POST(request: NextRequest) {
     celula.fill = {
       type: 'pattern',
       pattern: 'solid',
-      // Colunas confidenciais destacadas em âmbar, para ficar claro no arquivo.
-      fgColor: { argb: coluna?.confidencial ? 'FFB45309' : 'FF2B5089' },
+      // Confidenciais em âmbar e fórmulas em azul, para ficar claro no arquivo.
+      fgColor: { argb: coluna?.confidencial ? 'FFB45309' : coluna?.tipo === 'formula' ? 'FF0E7490' : 'FF9B1C24' },
     };
   });
 
+  const hoje = new Date();
   for (const registro of registros) {
-    const admBruto = registro.legalizacao_dados_administrativos;
-    const administrativo = Array.isArray(admBruto) ? (admBruto[0] ?? null) : (admBruto ?? null);
-
-    const linha: Record<string, unknown> = {};
+    const linha = registro as unknown as LinhaPlanilha;
+    const formulas = colunas.some((c) => c.tipo === 'formula') ? calcularFormulas(linha, todas, hoje) : undefined;
+    const valores: Record<string, unknown> = {};
     for (const coluna of colunas) {
-      const bruto = coluna.confidencial
-        ? administrativo
-          ? (administrativo as unknown as Record<string, unknown>)[coluna.campo]
-          : null
-        : (registro as unknown as Record<string, unknown>)[coluna.campo];
-
-      if (bruto === null || bruto === undefined) {
-        linha[coluna.campo] = null;
-      } else if (coluna.tipo === 'cnpj') {
-        linha[coluna.campo] = formatarCnpj(bruto);
-      } else if (coluna.tipo === 'data') {
-        const data = new Date(String(bruto));
-        linha[coluna.campo] = Number.isNaN(data.getTime()) ? String(bruto) : data;
-      } else if (coluna.tipo === 'moeda' || coluna.tipo === 'numero') {
-        linha[coluna.campo] = Number(bruto);
-      } else if (coluna.tipo === 'booleano') {
-        linha[coluna.campo] = bruto ? 'Sim' : 'Não';
-      } else {
-        linha[coluna.campo] = String(bruto);
+      if (coluna.tipo === 'formula') {
+        const r = formulas?.[coluna.campo];
+        if (!r || r.erro) valores[coluna.campo] = r?.erro?.codigo ?? null;
+        else if (r.valor instanceof Date) valores[coluna.campo] = r.valor;
+        else if (typeof r.valor === 'number' && ['numero', 'moeda'].includes(coluna.formato ?? '')) valores[coluna.campo] = r.valor;
+        else valores[coluna.campo] = textoDaCelula(linha, coluna, formulas) || null;
+        continue;
       }
+      const bruto = valorBruto(linha, coluna);
+      if (bruto === null || bruto === undefined || bruto === '') valores[coluna.campo] = null;
+      else if (coluna.tipo === 'cnpj') valores[coluna.campo] = formatarCnpj(bruto);
+      else if (coluna.tipo === 'data') valores[coluna.campo] = lerData(String(bruto)) ?? String(bruto);
+      else if (coluna.tipo === 'moeda' || coluna.tipo === 'numero' || coluna.tipo === 'processos') valores[coluna.campo] = Number(bruto);
+      else if (coluna.tipo === 'booleano') valores[coluna.campo] = bruto ? 'Sim' : 'Não';
+      else valores[coluna.campo] = String(bruto);
     }
-    planilha.addRow(linha);
+    planilha.addRow(valores);
   }
 
   colunas.forEach((coluna, indice) => {
     const colunaExcel = planilha.getColumn(indice + 1);
-    if (coluna.tipo === 'data') colunaExcel.numFmt = 'dd/mm/yyyy';
-    if (coluna.tipo === 'moeda') colunaExcel.numFmt = 'R$ #,##0.00';
+    if (coluna.tipo === 'data' || (coluna.tipo === 'formula' && coluna.formato === 'data')) colunaExcel.numFmt = 'dd/mm/yyyy';
+    if (coluna.tipo === 'moeda' || (coluna.tipo === 'formula' && coluna.formato === 'moeda')) colunaExcel.numFmt = 'R$ #,##0.00';
   });
 
-  planilha.autoFilter = {
-    from: { row: 1, column: 1 },
-    to: { row: 1, column: colunas.length },
-  };
+  planilha.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: Math.max(1, colunas.length) } };
 
   // Aba de contexto: quem exportou, quando e sob quais filtros.
   const info = workbook.addWorksheet('Informações');
-  info.columns = [{ width: 28 }, { width: 70 }];
+  info.columns = [{ width: 28 }, { width: 90 }];
   info.addRows([
     ['PortalMPC — Exportação'],
     [],
-    ['Gerado em', new Date().toLocaleString('pt-BR')],
+    ['Gerado em', new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })],
     ['Usuário', `${perfil.nome} (${perfil.email})`],
-    ['Função', perfil.role],
-    ['Área', perfil.area],
+    ['Planilha', contexto === 'administrativo' ? 'Planilha ADM' : 'Planilha Legalização'],
     ['Registros exportados', registros.length],
     ['Colunas exportadas', colunas.length],
-    [
-      'Inclui dados administrativos',
-      precisaAdministrativo ? 'Sim (perfil administrador)' : 'Não',
-    ],
-    ['Pesquisa aplicada', corpo.busca || '—'],
-    [
-      'Filtros aplicados',
-      (corpo.filtros ?? []).length
-        ? (corpo.filtros ?? []).map((f) => `${f.campo} ${f.operador} ${f.valor}`).join(' | ')
-        : '—',
-    ],
+    ['Inclui dados administrativos', incluiAdm && colunas.some((c) => c.confidencial) ? 'Sim (perfil administrador)' : 'Não'],
+    ['Filtros aplicados na tela', corpo.resumoFiltros || '—'],
+    ['Colunas calculadas', colunas.filter((c) => c.tipo === 'formula').map((c) => `${c.rotulo}: ${c.formula}`).join(' | ') || '—'],
   ]);
   info.getRow(1).font = { bold: true, size: 14 };
   info.getColumn(1).font = { bold: true };
 
-  // Registra a exportação na trilha de auditoria.
   await supabase.rpc('registrar_evento_auditoria', {
     p_acao: 'EXPORT',
     p_tabela: 'legalizacao_empresas',
@@ -227,15 +162,16 @@ export async function POST(request: NextRequest) {
     p_contexto: {
       registros: registros.length,
       colunas: colunas.map((c) => c.campo),
-      inclui_administrativo: precisaAdministrativo,
-      contexto: corpo.contexto ?? 'legalizacao',
+      inclui_administrativo: incluiAdm && colunas.some((c) => c.confidencial),
+      contexto,
+      filtros: corpo.resumoFiltros ?? null,
       user_agent: request.headers.get('user-agent'),
     },
     p_dados_novos: null,
   });
 
   const buffer = await workbook.xlsx.writeBuffer();
-  const nome = `portalmpc-${corpo.contexto ?? 'legalizacao'}-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  const nome = `portalmpc-${contexto}-${new Date().toISOString().slice(0, 10)}.xlsx`;
 
   return new NextResponse(buffer as ArrayBuffer, {
     headers: {

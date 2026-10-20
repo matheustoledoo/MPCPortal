@@ -136,6 +136,68 @@ export async function buscarEmpresas(
   return { linhas, total: count ?? 0 };
 }
 
+/** O PostgREST entrega no máximo mil linhas por resposta. */
+const LOTE = 1000;
+
+/**
+ * A planilha inteira, em lotes, para filtrar e ordenar no navegador como no
+ * Excel. A base tem centenas de linhas; o teto (50 mil) é só uma trava.
+ */
+export async function carregarTodasEmpresas(
+  supabase: SupabaseClient,
+  incluirAdministrativo: boolean,
+): Promise<LinhaEmpresa[]> {
+  const todas: LinhaEmpresa[] = [];
+  for (let de = 0; de < 50_000; de += LOTE) {
+    const { data, error } = await supabase
+      .from('legalizacao_empresas')
+      .select(incluirAdministrativo ? '*, legalizacao_dados_administrativos(*)' : '*')
+      .order('razao_social', { ascending: true })
+      .order('id', { ascending: true })
+      .range(de, de + LOTE - 1);
+    if (error) throw new Error(error.message);
+
+    for (const registro of data ?? []) {
+      const { legalizacao_dados_administrativos: adm, ...empresa } = registro as unknown as Empresa & {
+        legalizacao_dados_administrativos?: DadosAdministrativos | DadosAdministrativos[] | null;
+      };
+      todas.push({
+        ...empresa,
+        campos_extras: empresa.campos_extras ?? {},
+        administrativo: Array.isArray(adm) ? (adm[0] ?? null) : (adm ?? null),
+      } as LinhaEmpresa);
+    }
+    if ((data ?? []).length < LOTE) break;
+  }
+  return todas;
+}
+
+/**
+ * Grava o valor de uma coluna criada pela equipe. O objeto inteiro de
+ * `campos_extras` vai junto, já mesclado: o gatilho de colunas permitidas
+ * compara chave a chave, então só a coluna alterada conta como mudança.
+ */
+export async function salvarCampoExtra(
+  supabase: SupabaseClient,
+  empresaId: string,
+  confidencial: boolean,
+  extrasAtuais: Record<string, unknown> | null | undefined,
+  campo: string,
+  valor: unknown,
+): Promise<Record<string, unknown>> {
+  const proximos = { ...(extrasAtuais ?? {}) };
+  if (valor === null || valor === undefined || valor === '') delete proximos[campo];
+  else proximos[campo] = valor;
+
+  const { error } = confidencial
+    ? await supabase
+        .from('legalizacao_dados_administrativos')
+        .upsert({ empresa_id: empresaId, campos_extras: proximos }, { onConflict: 'empresa_id' })
+    : await supabase.from('legalizacao_empresas').update({ campos_extras: proximos }).eq('id', empresaId);
+  if (error) throw new Error(error.message);
+  return proximos;
+}
+
 /** Converte o valor digitado para o formato aceito pela coluna do banco. */
 export function prepararValor(campo: string, tipo: string, valor: unknown): unknown {
   if (valor === '' || valor === undefined) return null;
@@ -149,6 +211,7 @@ export function prepararValor(campo: string, tipo: string, valor: unknown): unkn
     case 'moeda':
       return normalizarNumero(valor);
     case 'booleano':
+      if (typeof valor === 'string') return ['true', 'sim', 's', '1', 'x', 'verdadeiro'].includes(valor.trim().toLowerCase());
       return Boolean(valor);
     case 'status':
       return normalizarTexto(valor)?.toUpperCase() ?? null;

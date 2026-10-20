@@ -6,7 +6,8 @@ import { CabecalhoPagina } from '@/components/layout/CabecalhoPagina';
 import { TabelaPlanilha } from '@/components/planilha/TabelaPlanilha';
 import { Selo } from '@/components/ui';
 import { responsaveisPorColuna } from '@/lib/atribuicoes';
-import { ehAdmin, rotuloPeriodicidade } from '@/lib/permissoes';
+import { PERMISSOES, ehAdmin, pode, rotuloPeriodicidade } from '@/lib/permissoes';
+import { carregarConfiguracaoPlanilha, parametrosDaPlanilha } from '@/lib/planilha/servidor';
 import { criarClienteServidor, obterPerfilAtual } from '@/lib/supabase/server';
 
 export const metadata = { title: 'Planilha ADM' };
@@ -15,14 +16,29 @@ export const metadata = { title: 'Planilha ADM' };
  * Página exclusiva de administradores.
  * O acesso direto pela URL é bloqueado aqui E pela RLS: mesmo que a página
  * renderizasse, o banco não devolveria uma única linha administrativa.
+ *
+ * Tem tudo o que a Planilha Legalização tem — filtros por coluna, ordenação,
+ * importação, fórmulas, colunas novas — e as colunas da equipe podem ser
+ * guardadas no bloco confidencial.
  */
-export default async function PaginaAdministrativo() {
+export default async function PaginaAdministrativo({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const perfil = await obterPerfilAtual();
   if (!perfil) redirect('/login');
   if (!ehAdmin(perfil)) redirect('/sem-acesso');
 
+  const parametros = parametrosDaPlanilha(await searchParams);
   const supabase = await criarClienteServidor();
-  const responsaveis = await responsaveisPorColuna(supabase, perfil.id, rotuloPeriodicidade);
+  const [responsaveis, configuracao] = await Promise.all([
+    responsaveisPorColuna(supabase, perfil.id, rotuloPeriodicidade),
+    carregarConfiguracaoPlanilha(supabase, 'administrativo', [
+      'legalizacao_empresas',
+      'legalizacao_dados_administrativos',
+    ]),
+  ]);
 
   return (
     <>
@@ -45,11 +61,22 @@ export default async function PaginaAdministrativo() {
       </div>
 
       <TabelaPlanilha
+        contexto="administrativo"
         podeVerAdministrativo
         podeEditar
+        podeCriar
         podeExcluir
+        podeImportar
+        podePersonalizarColunas
+        atalhos={{
+          processos: pode(perfil, PERMISSOES.telaProcessos),
+          integracao: pode(perfil, PERMISSOES.telaIntegracao),
+          calendario: pode(perfil, PERMISSOES.telaCalendario),
+        }}
         responsaveisPorColuna={responsaveis}
-        contexto="administrativo"
+        definicoesIniciais={configuracao.definicoes}
+        preferenciasIniciais={configuracao.preferencias}
+        parametros={parametros}
       />
     </>
   );

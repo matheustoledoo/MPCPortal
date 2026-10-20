@@ -141,6 +141,43 @@ tbody tr:hover .celula-fixa {
   animation: deslizar-direita 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* O sininho balança quando chega notificação nova. */
+@keyframes tremer {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  20% {
+    transform: rotate(-14deg);
+  }
+  40% {
+    transform: rotate(12deg);
+  }
+  60% {
+    transform: rotate(-8deg);
+  }
+  80% {
+    transform: rotate(5deg);
+  }
+}
+
+/* Curtida do Fórum: um "pulo" rápido no coração. */
+@keyframes pulsar-curtida {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.35);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.animar-curtida {
+  animation: pulsar-curtida 0.35s ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

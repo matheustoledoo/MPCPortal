@@ -115,6 +115,24 @@ reaproveitados como estão.
 
 ---
 
+## Como as telas se ligam
+
+```
+Dashboard ──(clique em cidade/regime/vencimento)──▶ Planilha Legalização ?f.campo=valor
+Consultas por cidade ──(?fc.cidade=)──────────────▶ Planilha Legalização
+Planilha (selo de processos) ─────────────────────▶ Controle Legalização ?empresa=
+Planilha (painel da empresa) ─────────────────────▶ Processos · Integração · Calendário
+Calendário (Reunião de Integração) ──(?evento=)───▶ Integração de Clientes (cria ou abre)
+Integração ───────────────────────────────────────▶ evento no calendário · empresa na planilha
+Notificações (sino) ──(link de cada aviso)────────▶ o item exato (?item=, ?processo=, post…)
+Busca global (Ctrl+K) ────────────────────────────▶ empresa, processo, pessoa, cidade, post
+```
+
+Os avisos nascem no banco (gatilhos + `sincronizar_minhas_notificacoes()`), então qualquer
+tela que grava algo no nome de alguém já notifica, sem código extra no front.
+
+---
+
 ## Fluxo de autenticação
 
 ```
@@ -123,12 +141,13 @@ reaproveitados como estão.
        ├─ credenciais inválidas → mensagem específica em português
        ├─ perfil inexistente    → signOut + "procure o administrador"
        ├─ perfil inativo        → signOut + "acesso desativado"
-       └─ sucesso → grava ultimo_acesso → "/" → rotaInicial(perfil)
-                                                 ├─ admin        → /dashboard
-                                                 ├─ legalizacao  → /legalizacao
-                                                 ├─ fiscal       → /fiscal
-                                                 ├─ contabil     → /contabil
-                                                 └─ dep. pessoal → /departamento-pessoal
+       └─ sucesso → grava ultimo_acesso
+                      ├─ veio de um link (?proximo=/rota?parametros) → volta para ele
+                      └─ senão "/" → rotaInicial(perfil)
+                                       ├─ admin  → /dashboard
+                                       └─ demais → 1ª tela concedida (Dashboard, Planilha
+                                                   Legalização, Controle Legalização,
+                                                   Calendário, Fiscal, Contábil, DP) ou /inicio
 ```
 
 Recuperação de senha: `/recuperar-senha` → e-mail → `/auth/callback` (troca o código por
@@ -139,8 +158,13 @@ revelar quem tem conta no portal.
 
 ## Desempenho
 
-- Paginação, busca, ordenação e filtros acontecem **no banco** (`range`, `ilike`, `order`),
-  não no navegador. A tela funciona igual com 373 ou 50 mil empresas.
+- As planilhas carregam a base inteira (lotes de 1.000, sob a RLS) e filtram, ordenam,
+  paginam e calculam fórmulas **no navegador** — é o que permite o filtro por coluna com a
+  lista de valores, como no Excel, sem ida ao servidor a cada clique. Para a base atual
+  (centenas de empresas) é instantâneo; se ela passar de dezenas de milhares de linhas, o
+  caminho é voltar a paginar no banco só na carga inicial.
+- A exportação refaz a consulta no servidor, sob a RLS, a partir dos ids filtrados — o
+  navegador nunca decide quais colunas confidenciais saem no arquivo.
 - Índices GIN `pg_trgm` em `razao_social` e `cnpj` para busca por trecho; índices comuns
   em `cidade`, `status`, `origem`, `codigo`.
 - A busca global tem *debounce* de 350 ms.
