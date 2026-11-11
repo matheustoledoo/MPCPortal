@@ -73,7 +73,7 @@ function Perfil({ usuarioId }: { usuarioId: string }) {
 
   return (
     <main className="min-w-0 border-borda bg-superficie-elevada sm:rounded-2xl sm:border">
-      <div className="sticky top-14 z-10 flex items-center gap-4 border-b border-borda bg-superficie-elevada/95 px-4 py-2 backdrop-blur sm:rounded-t-2xl">
+      <div className="sticky top-16 z-10 flex items-center gap-4 border-b border-borda bg-superficie-elevada/95 px-4 py-2 backdrop-blur sm:rounded-t-2xl">
         <button onClick={() => router.push('/forum')} className="rounded-full p-2 hover:bg-superficie" aria-label="Voltar ao Fórum">
           <ArrowLeft className="h-5 w-5" />
         </button>

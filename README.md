@@ -15,6 +15,13 @@ O time de Legalização trabalha em duas planilhas ligadas entre si: a **base de
 com protocolo, prazo e responsável — e avisa na base quando uma empresa tem processo em
 andamento.
 
+Desde a evolução de novembro/2026 o portal também tem: **agenda central** (o calendário
+recebe tudo que tem data — tarefas, prazos da legalização, integrações, ações de prospecção),
+**Tarefas e lembretes** em Kanban, **Mensagens** internas em tempo real, **Prospecção** (CRM),
+**Aprendizagem e procedimentos** (base de conhecimento) e **Ferramentas** (calculadoras com
+tabelas oficiais e vigência). A carteira de empresas ganhou **ativas/inativas** e **histórico de
+movimentações** permanente.
+
 A arquitetura já está preparada para os módulos Fiscal, Contábil e Departamento Pessoal.
 
 ---
@@ -33,6 +40,8 @@ A arquitetura já está preparada para os módulos Fiscal, Contábil e Departame
 - [Fórum da Meta](#fórum-da-meta)
 - [Notificações](#notificações)
 - [Atribuições](#atribuições-quem-faz-o-quê-e-até-quando)
+- [Módulos novos (nov/2026)](#módulos-novos-nov2026)
+- [Testes](#testes)
 - [Importação das planilhas](#importação-das-planilhas)
 - [Usuários e acessos](#usuários-e-acessos)
 - [Importar do app antigo (Portal Meta Plano)](#importar-do-app-antigo-portal-meta-plano)
@@ -219,7 +228,15 @@ supabase/
 | `usuario_preferencias` | Ajustes pessoais de tela: colunas visíveis, ordem, larguras, filtros |
 | `notificacoes` / `notificacao_preferencias` | Caixa de cada usuário (escrita só pelo banco) e o que cada um quer receber |
 | `forum_posts`, `forum_curtidas`, `forum_salvos`, `forum_votos`, `forum_seguidores` | Fórum da Meta |
-| `calendario_regras` / `calendario_eventos` / `calendario_conclusoes` | Obrigações fixas, compromissos e o que foi concluído |
+| `calendario_regras` / `calendario_eventos` / `calendario_conclusoes` | Obrigações fixas (com `fonte` e-Conet ou equipe), a **agenda central** (eventos manuais e os publicados pelos módulos) e o que foi concluído |
+| `calendario_catalogo_econet` | Catálogo das 39 obrigações do calendário anual e-Conet, para sincronizar sem duplicar |
+| `opcoes_grupos` (+ `legalizacao_opcoes`) | Todas as listas de seleção do portal, com opções padrão protegidas e "+ Adicionar outro" |
+| `empresa_movimentacoes` / `empresa_documentos` | Histórico permanente da empresa (só inserção) e os documentos anexados |
+| `tarefas`, `tarefa_comentarios`, `tarefa_anexos`, `tarefa_historico` | Quadro Kanban de tarefas e lembretes |
+| `prospeccao_etapas`, `prospeccao_leads`, `prospeccao_atividades` | Funil comercial, leads e histórico de contatos |
+| `chat_conversas`, `chat_participantes`, `chat_mensagens` | Mensagens internas (diretas e grupos) |
+| `conhecimento_categorias`, `conhecimento_artigos`, `conhecimento_versoes`, `conhecimento_favoritos`, `conhecimento_avaliacoes`, `conhecimento_progresso` | Base de conhecimento, versões, favoritos, avaliação e checklist de cada pessoa |
+| `ferramentas_tabelas` / `ferramentas_calculos` | Tabelas legais com fonte e vigência, e a memória de cálculos de cada usuário |
 | `integracoes` / `integracao_departamentos` | Ficha do cliente novo e o roteiro de cada departamento |
 | `brasil_estados` / `brasil_municipios` / `referencias_links` | Os 5.570 municípios e os links de consulta |
 
@@ -403,6 +420,112 @@ antecedência avisar.
 - Quem cuida de cada coluna aparece no cabeçalho da planilha (ícone de pessoa) para
   **qualquer** usuário — saber a quem recorrer não depende de permissão.
 - Criar, editar e apagar atribuições exige `admin.atribuicoes.gerenciar`.
+
+---
+
+## Módulos novos (nov/2026)
+
+### Agenda central (calendário)
+
+`calendario_eventos` é a **única** tabela de eventos. Compromissos criados no calendário têm
+`modulo = 'calendario'`; os demais módulos **publicam** nela por gatilho, sempre pela mesma
+função (`agenda_publicar`), com origem (`origem_tabela`, `origem_id`), link de volta,
+responsáveis e situação. Um índice único pela origem impede duplicados: mudar a data na origem
+atualiza o mesmo evento; cancelar ou excluir reflete no calendário.
+
+| Origem | O que entra na agenda |
+| --- | --- |
+| Tarefas e lembretes | toda tarefa com prazo, para os responsáveis |
+| Controle Legalização | o prazo de cada processo |
+| Planilha Legalização | validades de AVCB/CLCB, Vigilância Sanitária e RT |
+| Integração de Clientes | a reunião e os roteiros dos departamentos |
+| Prospecção | cada ação agendada (ligação, reunião, proposta…) |
+| Atribuições | o próximo vencimento de cada atribuição |
+
+Visões de **dia, semana e mês**, lista e visão geral; filtros por departamento, pessoa, esfera,
+tipo (módulo), situação e origem; "Abrir em…" leva ao registro de origem; concluir uma tarefa
+ou ação pelo calendário conclui na origem (`agenda_concluir`).
+
+**e-Conet.** No app antigo, a "integração e-Conet" não era uma API: era a tabela de obrigações
+fixas, conferida contra o calendário anual do e-Conet. Aqui ela ficou explícita: cada obrigação
+legal tem `fonte = 'econet'` (e `conferido_em`, quando conferida), aparece com o selo
+**e-Conet** e pode ser filtrada. **Sincronizar e-Conet** (aba Obrigações fixas, quem vê todos
+os departamentos) inclui o que faltar a partir do catálogo, sem duplicar. Os vencimentos são
+calculados pelo portal (dia útil, feriados); não há consulta automática ao site do e-Conet —
+ele não oferece API pública.
+
+### Tarefas e lembretes (`/tarefas`)
+
+Quadro com as colunas A fazer, Em andamento, Em revisão, Concluído e Cancelado; arrastar e
+soltar; vários responsáveis, prioridade, prazo com hora, categoria, subtarefas, comentários,
+anexos e histórico. Tarefa privada só aparece para quem criou e para os responsáveis.
+
+### Mensagens (`/chat`)
+
+Conversas individuais e em grupo (inclusive o grupo do departamento), em tempo real, com
+imagens e arquivos, não lidas, busca em mensagens e nomes de arquivo, edição e exclusão da
+própria mensagem. O histórico fica no banco; só os participantes leem a conversa e abrem os
+arquivos.
+
+### Prospecção (`/prospeccao`)
+
+Funil Kanban com etapas configuráveis pelo administrador, ficha do lead, histórico de
+contatos, propostas, próxima ação (que entra no calendário), motivo de perda e painel de
+indicadores calculado sobre os registros reais (`prospeccao_indicadores`).
+
+### Aprendizagem e procedimentos (`/conhecimento`)
+
+Tutoriais em blocos (texto, destaque, imagem, vídeo, link), procedimentos com checklist
+pessoal, arquivos, categorias e subcategorias, busca sem acento, favoritos, "foi útil?" e
+histórico de versões com restauração.
+
+### Ferramentas (`/ferramentas`)
+
+Dezesseis calculadoras (INSS, IRRF, salário líquido, pró-labore, FGTS, férias, 13º, rescisão,
+Simples/DAS com Fator R, DAS-MEI, Lucro Presumido, comparador de regimes, projeção de
+faturamento, tributo federal em atraso, dias úteis, validador de CPF/CNPJ). Cada uma mostra o
+passo a passo, a base legal com vigência e **o que não considera**. Nenhuma alíquota está no
+código: tudo vem de `ferramentas_tabelas`, que o administrador atualiza em
+**Tabelas e vigências** criando uma nova vigência com a fonte legal.
+
+### Carteira ativa/inativa e histórico da empresa
+
+Na Planilha Legalização, as abas **Ativas / Inativas / Todas** separam a carteira. **Inativar**
+pede data e motivo e preserva o cadastro; **Reativar** traz a empresa de volta. Excluir de
+verdade é exclusivo do administrador. O painel da empresa tem **Histórico** (linha do tempo
+com movimentações automáticas — entrada, saída, mudança de regime, razão social, sócio… — e
+manuais, com anexos) e **Documentos**. O histórico só aceita inserção: nem o administrador
+altera ou apaga uma movimentação.
+
+### Permissões novas
+
+| Chave | Libera |
+| --- | --- |
+| `tela.tarefas`, `tela.chat`, `tela.conhecimento`, `tela.ferramentas`, `tela.prospeccao` | abrir cada módulo |
+| `dados.tarefas.gerenciar` | alterar tarefas de outras pessoas (não privadas) |
+| `dados.prospeccao.editar` / `.excluir` | cadastrar e mover leads / excluir |
+| `dados.conhecimento.editar` / `.excluir` | publicar conteúdos / excluir |
+| `dados.opcoes.gerenciar` | "+ Adicionar outro" e excluir opções personalizadas |
+| `dados.planilha.colunas`, `dados.ferramentas.tabelas` | **somente administrador**: estrutura da planilha e tabelas das calculadoras |
+
+Editar registros e alterar a estrutura são coisas diferentes: quem tem
+`dados.legalizacao.editar` edita células, mas só o administrador cria, renomeia, oculta ou
+exclui colunas — a política de RLS de `planilha_colunas` exige `is_admin()`.
+
+---
+
+## Testes
+
+```bash
+npm test          # calculadoras: 30 casos com valores conhecidos
+npm run typecheck
+npm run lint
+npm run build
+```
+
+Os testes de integração do banco (agenda, chat, permissões, histórico) estão descritos em
+[`docs/SEGURANCA.md`](docs/SEGURANCA.md#8-evolução-de-novembro2026) e rodam em transação
+desfeita no final, sem deixar dado de teste.
 
 ---
 

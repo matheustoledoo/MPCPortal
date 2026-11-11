@@ -22,7 +22,7 @@ export function BarraSuperior({ perfil }: { perfil: PerfilComPermissoes }) {
     .join('');
 
   return (
-    <header className="sem-impressao sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b border-borda bg-superficie-elevada/95 px-4 backdrop-blur sm:px-6">
+    <header className="sem-impressao sticky top-0 z-30 flex h-16 shrink-0 items-center gap-3 border-b border-borda bg-superficie-elevada/95 px-4 backdrop-blur sm:px-6">
       <button
         onClick={() => window.dispatchEvent(new Event(EVENTO_ABRIR_MENU))}
         className="rounded-lg p-2 text-texto-suave transition-colors hover:bg-superficie lg:hidden"

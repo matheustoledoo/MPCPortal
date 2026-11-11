@@ -297,7 +297,7 @@ export function ChatApp({
   const totalNaoLidas = conversas.reduce((s, c) => s + (c.id === ativaId ? 0 : c.nao_lidas), 0);
 
   return (
-    <div className="flex h-[calc(100dvh-3.5rem)] min-h-0 bg-superficie-elevada">
+    <div className="flex h-[calc(100dvh-4rem)] min-h-0 bg-superficie-elevada">
       {/* Lista de conversas */}
       <aside className={cn('flex w-full shrink-0 flex-col border-r border-borda md:w-80 lg:w-[340px]', ativaId && 'hidden md:flex')}>
         <div className="flex items-center justify-between gap-2 px-4 pb-2 pt-4">

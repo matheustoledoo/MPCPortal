@@ -31,7 +31,7 @@ export function FeedForum({ eu, busca, tag }: { eu: EuNoForum; busca?: string; t
       <div className="mx-auto grid max-w-6xl gap-6 px-0 sm:px-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:py-5">
         <main className="min-w-0 border-borda bg-superficie-elevada sm:rounded-2xl sm:border">
           {busca || tag ? (
-            <div className="sticky top-14 z-10 flex items-center gap-3 border-b border-borda bg-superficie-elevada/95 px-4 py-3 backdrop-blur sm:rounded-t-2xl">
+            <div className="sticky top-16 z-10 flex items-center gap-3 border-b border-borda bg-superficie-elevada/95 px-4 py-3 backdrop-blur sm:rounded-t-2xl">
               {busca ? <Search className="h-5 w-5 text-marca-600" /> : <Hash className="h-5 w-5 text-marca-600" />}
               <div className="min-w-0 flex-1">
                 <p className="text-xs text-texto-fraco">{busca ? 'Resultados para' : 'Assunto'}</p>
@@ -42,7 +42,7 @@ export function FeedForum({ eu, busca, tag }: { eu: EuNoForum; busca?: string; t
               </Link>
             </div>
           ) : (
-            <div className="sticky top-14 z-10 border-b border-borda bg-superficie-elevada/95 backdrop-blur sm:rounded-t-2xl">
+            <div className="sticky top-16 z-10 border-b border-borda bg-superficie-elevada/95 backdrop-blur sm:rounded-t-2xl">
               <div className="flex items-center justify-between gap-3 px-4 pt-3">
                 <h1 className="text-xl font-bold text-texto">Fórum da Meta</h1>
                 <form action="/forum" className="relative w-48 lg:hidden">

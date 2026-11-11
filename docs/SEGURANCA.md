@@ -401,3 +401,71 @@ login (conferido em `/calendario`, `/integracao-clientes`, `/forum`, `/notificac
 `/controle-legalizacao`, `/usuarios`, `/referencias`, `/inicio`, `/dashboard`); o destino
 volta inteiro depois do login. As telas exclusivas de admin continuam barradas no servidor
 por `ehAdmin()` antes de qualquer consulta.
+
+---
+
+## 8. Evolução de novembro/2026
+
+### 8.1 O que cada tabela nova exige
+
+| Tabela | Ler | Escrever |
+| --- | --- | --- |
+| `calendario_eventos` (módulos) | o próprio (responsável/participante) sempre; os demais com `tela.calendario` **e** a permissão do módulo de origem, se não for privado | só pelos gatilhos dos módulos; escrita direta apenas para `modulo = 'calendario'` |
+| `tarefas` e filhos | responsável, quem criou, ou `tela.tarefas` se não for privada | responsável, quem criou, ou `dados.tarefas.gerenciar` (não privada); histórico só por gatilho |
+| `prospeccao_*` | `tela.prospeccao` | `dados.prospeccao.editar`; excluir lead com `dados.prospeccao.excluir`; etapas só admin |
+| `chat_*` | só participantes ativos da conversa | mensagem: `tela.chat` + participar; conversas e participantes só pelas funções |
+| `conhecimento_*` | `tela.conhecimento` (rascunho: autor e editores) | `dados.conhecimento.editar` / `.excluir`; favoritos, avaliação e progresso são de cada um |
+| `ferramentas_tabelas` | `tela.ferramentas` | **só administrador** |
+| `ferramentas_calculos` | o próprio usuário | o próprio usuário |
+| `empresa_movimentacoes` | quem lê a Legalização | só **inserção**; sem política de UPDATE/DELETE e com gatilho que recusa alteração |
+| `empresa_documentos` | quem lê a Legalização | quem edita; remove quem enviou ou o admin |
+| `planilha_colunas` | — | **só administrador** (`is_admin()`), independentemente de `dados.legalizacao.editar` |
+| `legalizacao_empresas` (DELETE) | — | **só administrador**; os demais inativam |
+| `storage.objects` (bucket `arquivos`) | `arquivo_acesso(nome, false)`: decide pela pasta (`chat/<conversa>`, `tarefas/<tarefa>`, `conhecimento/<artigo>`, `empresas/<empresa>`) | `arquivo_acesso(nome, true)`; lista de MIME e 25 MB por arquivo no próprio bucket |
+
+Conteúdo da base de conhecimento é guardado como dado estruturado (blocos), nunca HTML;
+links passam por validação de protocolo (`http/https`) e vídeos externos só são incorporados
+de YouTube/Vimeo.
+
+### 8.2 Testes executados (11/11/2026)
+
+Rodados no banco de produção dentro de uma transação desfeita ao final (`raise exception`),
+personificando usuários reais por `request.jwt.claims` + `set local role authenticated`.
+Nenhum dado de teste ficou gravado.
+
+| Cenário | Resultado |
+| --- | --- |
+| Gestor cria tarefa com prazo para um colaborador | 1 evento em `calendario_eventos` (`modulo = tarefas`), na data do prazo |
+| A tarefa na agenda do colaborador atribuído | aparece em `agenda_periodo()` chamada por ele; 1 notificação gerada |
+| Alterar o prazo da tarefa | o **mesmo** evento muda de data (continua 1, sem duplicar) |
+| Colaborador conclui pelo calendário (`agenda_concluir`) | tarefa `concluido`, evento `concluido`, 3 linhas no histórico da tarefa |
+| Processo de legalização com prazo | 1 evento (`modulo = processos`) na data do prazo |
+| Ação de prospecção agendada | 1 evento (`modulo = prospeccao`) com link `/prospeccao?lead=…`; `proxima_acao_em` do lead atualizada |
+| Usuário sem `tela.prospeccao` consulta leads | 0 linhas |
+| Mensagem com arquivo entre dois usuários | o destinatário lê a mensagem e passa em `arquivo_acesso`; não lidas = 2 após duas mensagens, 0 depois de ler |
+| Terceiro usuário na mesma conversa | lê 0 mensagens, não abre o arquivo e é barrado ao escrever (RLS) |
+| Histórico do chat | as mensagens permanecem; a apagada pelo autor fica como registro sem texto; a busca encontra a resposta |
+| Participante removido tenta voltar ao grupo ou virar admin por UPDATE direto | sem efeito (gatilho `chat_participante_proteger`, migration 0032); marcar como lida continua funcionando |
+| Gestor (não admin) cria coluna em `planilha_colunas` | **recusado** pela RLS |
+| Administrador cria coluna | permitido |
+| Colaborador muda a tributação para HÍBRIDO | movimentação automática "Alteração de regime tributário" (de → para), em nome de quem alterou |
+| Administrador tenta alterar uma movimentação | nenhuma linha alterada |
+| Inativar empresa | `situacao = inativa`, `status = INATIVO`, data e motivo gravados, cadastro preservado, movimentação "Saída de empresa" |
+| Reativar | volta a `ativa`/`ATIVO`, movimentação "Reativação"; a saída anterior continua no histórico |
+| Calculadoras | 30 testes com valores conhecidos (`npm test`) |
+
+No navegador (Chromium, build de produção), login e as telas `/inicio`, `/tarefas`,
+`/prospeccao`, `/chat`, `/conhecimento`, `/ferramentas` (INSS de R$ 3.000,00 = R$ 248,60; DAS
+do Anexo I com RBT12 de R$ 300.000,00 e receita de R$ 25.000,00 = R$ 1.330,00),
+`/ferramentas/tabelas`, `/calendario` (mês, semana, dia), `/legalizacao` (abas da carteira),
+`/controle-legalizacao` e `/usuarios` abriram sem erro de console, também na largura de
+celular.
+
+### 8.3 Avisos do Supabase que continuam abertos
+
+- **Funções `SECURITY DEFINER` chamáveis por usuários logados** (aviso, não erro): é
+  intencional — cada uma confere a permissão antes de agir (`tem_permissao`, `is_admin`,
+  `chat_participa`…) e `anon` não tem `EXECUTE`.
+- **Proteção contra senhas vazadas desligada**: ligue em *Authentication → Policies* no painel
+  do Supabase (não é configurável por migration).
+

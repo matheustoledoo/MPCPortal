@@ -1002,18 +1002,30 @@ export function TabelaPlanilha({
         ) : total === 0 ? (
           <EstadoVazio
             icone={filtrosAtivos > 0 ? <SearchX className="h-6 w-6" /> : <FileSpreadsheet className="h-6 w-6" />}
-            titulo={filtrosAtivos > 0 ? 'Nenhuma empresa encontrada' : 'Nenhuma empresa cadastrada'}
+            titulo={
+              filtrosAtivos > 0
+                ? 'Nenhuma empresa encontrada'
+                : linhas.length > 0
+                  ? carteira === 'inativas'
+                    ? 'Nenhuma empresa inativa'
+                    : 'Nenhuma empresa nesta visão'
+                  : 'Nenhuma empresa cadastrada'
+            }
             descricao={
               filtrosAtivos > 0
                 ? 'Ajuste a pesquisa ou remova alguns filtros para ver mais resultados.'
-                : 'Cadastre a primeira empresa ou importe uma planilha.'
+                : linhas.length > 0
+                  ? carteira === 'inativas'
+                    ? 'Quando uma empresa sair da carteira, use “Inativar”: ela aparece aqui com a data e o motivo da saída, e pode ser reativada.'
+                    : 'Troque para “Todas” para ver a carteira completa.'
+                  : 'Cadastre a primeira empresa ou importe uma planilha.'
             }
             acao={
               filtrosAtivos > 0 ? (
                 <Botao variante="secundario" tamanho="sm" onClick={limparTudo}>
                   Limpar filtros
                 </Botao>
-              ) : podeImportar ? (
+              ) : podeImportar && linhas.length === 0 ? (
                 <Botao tamanho="sm" onClick={() => setImportando(true)}>
                   Importar planilha
                 </Botao>

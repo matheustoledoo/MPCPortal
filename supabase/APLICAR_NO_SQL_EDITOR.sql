@@ -1,7 +1,7 @@
 -- =====================================================================
 -- PortalMPC — migrations pendentes, prontas para o SQL Editor
--- Gerado em 2026-10-20T17:35:03.893Z
--- Inclui: 0001_core_perfis_e_permissoes.sql, 0002_legalizacao_empresas.sql, 0003_dados_administrativos.sql, 0004_auditoria_e_importacao.sql, 0005_tabelas_referencia.sql, 0006_rls_politicas.sql, 0007_rpc_estatisticas.sql, 0008_restringir_execucao_de_funcoes.sql, 0009_corrigir_tokens_nulos_auth_users.sql, 0010_permissoes_modulares.sql, 0011_atribuicoes.sql, 0012_colunas_por_usuario.sql, 0013_permitir_manutencao_sem_sessao.sql, 0014_revogar_gatilhos_novos.sql, 0015_controle_geral_processos.sql, 0016_planilha_personalizavel.sql, 0017_calendario_e_integracao.sql, 0018_notificacoes.sql, 0019_forum_da_meta.sql, 0020_referencias_brasil.sql, 0021_forum_tempo_real.sql, 0022_integracao_ficha_e_tempo_real.sql, 0023_designacao_somente_futuro.sql
+-- Gerado em 2026-11-11T17:13:41.896Z
+-- Inclui: 0001_core_perfis_e_permissoes.sql, 0002_legalizacao_empresas.sql, 0003_dados_administrativos.sql, 0004_auditoria_e_importacao.sql, 0005_tabelas_referencia.sql, 0006_rls_politicas.sql, 0007_rpc_estatisticas.sql, 0008_restringir_execucao_de_funcoes.sql, 0009_corrigir_tokens_nulos_auth_users.sql, 0010_permissoes_modulares.sql, 0011_atribuicoes.sql, 0012_colunas_por_usuario.sql, 0013_permitir_manutencao_sem_sessao.sql, 0014_revogar_gatilhos_novos.sql, 0015_controle_geral_processos.sql, 0016_planilha_personalizavel.sql, 0017_calendario_e_integracao.sql, 0018_notificacoes.sql, 0019_forum_da_meta.sql, 0020_referencias_brasil.sql, 0021_forum_tempo_real.sql, 0022_integracao_ficha_e_tempo_real.sql, 0023_designacao_somente_futuro.sql, 0024_permissoes_colunas_e_opcoes.sql, 0025_agenda_central.sql, 0026_empresas_situacao_e_movimentacoes.sql, 0027_tarefas.sql, 0028_prospeccao.sql, 0029_chat.sql, 0030_conhecimento.sql, 0031_ferramentas_e_arquivos.sql, 0032_chat_participante_protegido.sql
 --
 -- Cole tudo de uma vez no SQL Editor do Supabase e execute.
 -- É seguro rodar mais de uma vez.
@@ -5658,6 +5658,3317 @@ end;
 $$;
 
 revoke all on function public.notificar_designacao() from public, anon, authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 0024_permissoes_colunas_e_opcoes.sql
+-- ---------------------------------------------------------------------
+
+-- =====================================================================
+-- PortalMPC — 0024 — Permissões dos novos módulos, estrutura das planilhas
+--                    só para administradores e opções reutilizáveis
+-- ---------------------------------------------------------------------
+-- 1. Catálogo: uma permissão de tela por módulo novo (tarefas, prospecção,
+--    chat, conhecimento, ferramentas) e as de dados que cada um precisa.
+-- 2. "Somente administradores criam, editam ou excluem colunas inteiras":
+--    a política de `planilha_colunas` passa a exigir is_admin() — preencher
+--    células continua dependendo só das permissões de edição de registros.
+-- 3. Opções de campos de seleção: a tabela que já alimentava o Controle
+--    Legalização vira o serviço único de listas do portal. Toda lista tem
+--    "Adicionar outro"; as opções padrão do sistema são protegidas; excluir
+--    uma opção em uso exige dizer por qual valor substituir.
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- 1. Permissões
+-- ---------------------------------------------------------------------
+insert into public.permissoes_catalogo (chave, rotulo, descricao, grupo, rota, somente_admin, ordem) values
+  ('tela.tarefas',        'Tarefas e lembretes',     'Quadro Kanban: criar tarefas, mover cartões, comentar e anexar.', 'telas', '/tarefas', false, 5),
+  ('tela.prospeccao',     'Prospecção (CRM)',        'Funil comercial, leads, contatos e indicadores.', 'telas', '/prospeccao', false, 6),
+  ('tela.chat',           'Chat interno',            'Conversas individuais e em grupo com os colegas.', 'telas', '/chat', false, 7),
+  ('tela.conhecimento',   'Central de conhecimento', 'Tutoriais, procedimentos passo a passo e arquivos de consulta.', 'telas', '/conhecimento', false, 8),
+  ('tela.ferramentas',    'Ferramentas',             'Calculadoras tributárias e trabalhistas.', 'telas', '/ferramentas', false, 9),
+  ('dados.tarefas.gerenciar',     'Gerenciar tarefas de todos',  'Editar, mover e excluir qualquer tarefa do quadro (sem isso, só as que criou ou em que é responsável).', 'dados', null, false, 60),
+  ('dados.prospeccao.editar',     'Editar a prospecção',         'Cadastrar e alterar leads, registrar contatos, propostas e próximas ações.', 'dados', null, false, 61),
+  ('dados.prospeccao.excluir',    'Excluir leads',               'Apagar um lead inteiro com o histórico.', 'dados', null, false, 62),
+  ('dados.conhecimento.editar',   'Escrever na Central de conhecimento', 'Criar e editar tutoriais, procedimentos, categorias e enviar arquivos.', 'dados', null, false, 63),
+  ('dados.conhecimento.excluir',  'Excluir conteúdos da Central',        'Apagar tutoriais, procedimentos e arquivos.', 'dados', null, false, 64),
+  ('dados.ferramentas.tabelas',   'Atualizar tabelas das calculadoras',  'Alterar faixas, alíquotas e valores de referência usados nas ferramentas.', 'dados', null, true, 65)
+on conflict (chave) do update
+  set rotulo = excluded.rotulo, descricao = excluded.descricao, grupo = excluded.grupo,
+      rota = excluded.rota, somente_admin = excluded.somente_admin, ordem = excluded.ordem, ativo = true;
+
+-- Estrutura das planilhas: exclusiva de administradores.
+update public.permissoes_catalogo
+   set somente_admin = true,
+       rotulo = 'Criar, editar e excluir colunas',
+       descricao = 'Alterar a estrutura das planilhas (colunas inteiras). Exclusivo de administradores.'
+ where chave = 'dados.planilha.colunas';
+
+alter policy planilha_colunas_escrita on public.planilha_colunas
+  using (public.is_admin())
+  with check (public.is_admin());
+
+-- Quem já usa o portal recebe as telas de uso geral (o administrador ajusta
+-- depois em Usuários e permissões). Contas sem nenhuma permissão continuam sem.
+insert into public.usuario_permissoes (usuario_id, chave)
+select p.id, c.chave
+from public.profiles p
+cross join (values ('tela.tarefas'), ('tela.chat'), ('tela.conhecimento'), ('tela.ferramentas')) as c(chave)
+where p.ativo and p.role <> 'admin'
+  and exists (select 1 from public.usuario_permissoes up where up.usuario_id = p.id)
+on conflict do nothing;
+
+-- ---------------------------------------------------------------------
+-- 2. Opções reutilizáveis
+-- ---------------------------------------------------------------------
+alter table public.legalizacao_opcoes
+  add column if not exists padrao boolean not null default false,
+  add column if not exists created_by uuid references public.profiles (id) on delete set null default auth.uid();
+
+comment on table public.legalizacao_opcoes is
+  'Serviço único de listas de seleção do portal (grupo → valores). `padrao` = opção do sistema, protegida contra exclusão.';
+
+-- Tudo que já existia veio das planilhas ou das migrations: é padrão.
+update public.legalizacao_opcoes set padrao = true where not padrao and created_at < now();
+
+/** De qual coluna cada lista é — é o que permite saber se uma opção está em uso. */
+create table if not exists public.opcoes_grupos (
+  grupo      text primary key,
+  rotulo     text not null,
+  tabela     text,
+  coluna     text,
+  -- A base de Legalização guarda os valores em maiúsculas, como na planilha.
+  maiusculas boolean not null default false
+);
+
+comment on table public.opcoes_grupos is
+  'Listas de seleção existentes e a coluna que cada uma alimenta (para checar dependências ao excluir).';
+
+alter table public.opcoes_grupos enable row level security;
+
+do $$
+begin
+  if not exists (select 1 from pg_policies where tablename = 'opcoes_grupos' and policyname = 'opcoes_grupos_select') then
+    create policy opcoes_grupos_select on public.opcoes_grupos
+      for select to authenticated using (public.is_active());
+  end if;
+end $$;
+
+insert into public.opcoes_grupos (grupo, rotulo, tabela, coluna, maiusculas) values
+  ('processo_status',        'Status do processo',        'legalizacao_processos', 'status', false),
+  ('processo_tipo_servico',  'Tipo de serviço',           'legalizacao_processos', 'tipo_servico', false),
+  ('processo_orgao',         'Órgão do processo',         'legalizacao_processos', 'orgao', false),
+  ('processo_proxima_acao',  'Próxima ação',              'legalizacao_processos', 'proxima_acao', false),
+  ('processo_indicador',     'Indicador',                 'legalizacao_processos', 'indicador', false),
+  ('empresa_status',         'Status da empresa',         'legalizacao_empresas', 'status', true),
+  ('empresa_tributacao',     'Tributação',                'legalizacao_empresas', 'tributacao', true),
+  ('empresa_estabelecido',   'Estabelecido',              'legalizacao_empresas', 'estabelecido', true),
+  ('empresa_alvara',         'Alvará',                    'legalizacao_empresas', 'alvara', true),
+  ('empresa_avcb_clcb',      'AVCB / CLCB',               'legalizacao_empresas', 'avcb_clcb', true),
+  ('empresa_lta',            'LTA',                       'legalizacao_empresas', 'lta', true),
+  ('empresa_cnes',           'CNES',                      'legalizacao_empresas', 'cnes', true),
+  ('empresa_cetesb',         'CETESB',                    'legalizacao_empresas', 'cetesb', true),
+  ('empresa_amlurb_tx_lixo', 'AMLURB (TX Lixo)',          'legalizacao_empresas', 'amlurb_tx_lixo', true),
+  ('empresa_vigilancia_sanitaria', 'Vigilância Sanitária', 'legalizacao_empresas', 'vigilancia_sanitaria', true),
+  ('empresa_extramuros',     'Extramuros',                'legalizacao_empresas', 'extramuros', true),
+  ('profissional',           'Profissional',              'legalizacao_empresas', 'profissional', false),
+  ('orgao',                  'Órgão de classe',           'legalizacao_empresas', 'orgao', false),
+  ('empresa_motivo_saida',   'Motivo da saída',           'legalizacao_empresas', 'motivo_saida', false),
+  ('movimentacao_tipo',      'Tipo de movimentação',      'empresa_movimentacoes', 'tipo', false),
+  ('lead_origem',            'Origem do lead',            'prospeccao_leads', 'origem', false),
+  ('lead_segmento',          'Segmento de atuação',       'prospeccao_leads', 'segmento', false),
+  ('lead_motivo_perda',      'Motivo da perda',           'prospeccao_leads', 'motivo_perda', false),
+  ('tarefa_categoria',       'Categoria da tarefa',       'tarefas', 'categoria', false)
+on conflict (grupo) do update
+  set rotulo = excluded.rotulo, tabela = excluded.tabela, coluna = excluded.coluna, maiusculas = excluded.maiusculas;
+
+-- Opções padrão. "HÍBRIDO" entra na tributação, como pedido.
+insert into public.legalizacao_opcoes (grupo, valor, ordem, padrao)
+select g.grupo, v.valor, v.ordem, true
+from (values
+  ('empresa_status',     array['ATIVO', 'SUSPENSO', 'INATIVO', 'BAIXADO']),
+  ('empresa_tributacao', array['MEI', 'SIMPLES', 'LUCRO PRESUMIDO', 'LUCRO REAL', 'HÍBRIDO', 'NÃO OPTANTE', 'DOMESTICA']),
+  ('empresa_estabelecido', array['SIM', 'NÃO', 'NA']),
+  ('empresa_alvara',     array['SIM', 'NÃO', 'NA']),
+  ('empresa_avcb_clcb',  array['SIM', 'NÃO', 'NA', 'VENCIDA', 'NÃO EMITIDO', 'NÃO PAGO', 'EM ANÁLISE']),
+  ('empresa_lta',        array['SIM', 'NÃO', 'NA', 'VENCIDA', 'NÃO EMITIDO', 'NÃO PAGO', 'EM ANÁLISE']),
+  ('empresa_cnes',       array['SIM', 'NÃO', 'NA', 'VENCIDA', 'NÃO EMITIDO', 'NÃO PAGO', 'EM ANÁLISE']),
+  ('empresa_cetesb',     array['SIM', 'NÃO', 'NA', 'VENCIDA', 'NÃO EMITIDO', 'NÃO PAGO', 'EM ANÁLISE']),
+  ('empresa_amlurb_tx_lixo', array['SIM', 'NÃO', 'NA', 'VENCIDA', 'NÃO EMITIDO', 'NÃO PAGO', 'EM ANÁLISE']),
+  ('empresa_vigilancia_sanitaria', array['SIM', 'NÃO', 'NA', 'VENCIDA', 'NÃO EMITIDO', 'NÃO PAGO', 'EM ANÁLISE']),
+  ('empresa_extramuros', array['SIM', 'NÃO', 'NA', 'VENCIDA', 'NÃO EMITIDO', 'NÃO PAGO', 'EM ANÁLISE']),
+  ('empresa_motivo_saida', array['Transferência para outra contabilidade', 'Encerramento da empresa (baixa)', 'Solicitação do cliente', 'Inadimplência', 'Rescisão pelo escritório', 'Empresa sem movimento']),
+  ('movimentacao_tipo',  array['Entrada de empresa', 'Saída de empresa', 'Reativação', 'Transferência de contabilidade', 'Alteração de regime tributário', 'Alteração de razão social', 'Mudança de endereço', 'Alteração de sócios', 'Alteração de responsável', 'Alteração cadastral', 'Outra movimentação']),
+  ('lead_origem',        array['Indicação', 'Prospecção ativa', 'Site', 'Instagram', 'WhatsApp', 'Google', 'LinkedIn', 'Evento', 'Parceiro']),
+  ('lead_segmento',      array['Saúde', 'Comércio', 'Serviços', 'Indústria', 'Tecnologia', 'Construção civil', 'Alimentação', 'Educação', 'Terceiro setor']),
+  ('lead_motivo_perda',  array['Preço', 'Fechou com concorrente', 'Permaneceu com o contador atual', 'Sem retorno', 'Sem interesse no momento', 'Fora do perfil']),
+  ('tarefa_categoria',   array['Fiscal', 'Contábil', 'Departamento Pessoal', 'Legalização', 'Qualidade', 'Administrativo', 'Comercial', 'Cliente'])
+) as g(grupo, valores)
+cross join lateral unnest(g.valores) with ordinality as v(valor, ordem)
+on conflict (grupo, valor) do update set padrao = true;
+
+-- Opção padrão não some nem muda de nome pela interface.
+create or replace function public.opcoes_proteger_padrao()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  -- Sem sessão = migration/manutenção.
+  if (select auth.uid()) is null then
+    return case when tg_op = 'DELETE' then old else new end;
+  end if;
+  if tg_op = 'DELETE' then
+    if old.padrao then
+      raise exception 'A opção "%" é padrão do sistema e não pode ser excluída.', old.valor using errcode = '42501';
+    end if;
+    return old;
+  end if;
+  if tg_op = 'UPDATE' and old.padrao and (new.valor is distinct from old.valor or new.grupo is distinct from old.grupo or not new.padrao) then
+    raise exception 'A opção "%" é padrão do sistema e não pode ser alterada.', old.valor using errcode = '42501';
+  end if;
+  if tg_op = 'INSERT' then
+    new.padrao := false;
+    new.created_by := (select auth.uid());
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public.opcoes_proteger_padrao() from public, anon, authenticated;
+
+create or replace trigger trg_opcoes_proteger_padrao
+  before insert or update or delete on public.legalizacao_opcoes
+  for each row execute function public.opcoes_proteger_padrao();
+
+create or replace trigger trg_audit_opcoes
+  after insert or update or delete on public.legalizacao_opcoes
+  for each row execute function public.registrar_auditoria();
+
+/** Em quantos registros a opção está sendo usada. */
+create or replace function public.opcao_uso(p_grupo text, p_valor text)
+returns integer
+language plpgsql stable security definer
+set search_path = ''
+as $$
+declare
+  g public.opcoes_grupos;
+  v_total integer := 0;
+begin
+  if not public.is_active() then return 0; end if;
+  select * into g from public.opcoes_grupos where grupo = p_grupo;
+  if g.tabela is null or to_regclass('public.' || quote_ident(g.tabela)) is null then return 0; end if;
+  execute format('select count(*) from public.%I where %I = $1', g.tabela, g.coluna) into v_total using p_valor;
+  return v_total;
+end;
+$$;
+
+/** "Adicionar outro": grava a opção nova e devolve o valor como ficou salvo. */
+create or replace function public.opcao_adicionar(p_grupo text, p_valor text)
+returns text
+language plpgsql security definer
+set search_path = ''
+as $$
+declare
+  g public.opcoes_grupos;
+  v_valor text := regexp_replace(btrim(coalesce(p_valor, '')), '\s+', ' ', 'g');
+  v_existente text;
+begin
+  if not public.tem_permissao('dados.opcoes.gerenciar') then
+    raise exception 'Você não tem permissão para adicionar opções às listas.' using errcode = '42501';
+  end if;
+  select * into g from public.opcoes_grupos where grupo = p_grupo;
+  if not found then
+    raise exception 'Lista de opções desconhecida: %', p_grupo using errcode = '22023';
+  end if;
+  if length(v_valor) < 1 or length(v_valor) > 80 then
+    raise exception 'A opção precisa ter entre 1 e 80 caracteres.' using errcode = '22023';
+  end if;
+  if g.maiusculas then v_valor := upper(v_valor); end if;
+
+  select o.valor into v_existente from public.legalizacao_opcoes o
+  where o.grupo = p_grupo and lower(o.valor) = lower(v_valor) limit 1;
+  if v_existente is not null then
+    update public.legalizacao_opcoes set ativo = true where grupo = p_grupo and valor = v_existente and not ativo;
+    return v_existente;
+  end if;
+
+  insert into public.legalizacao_opcoes (grupo, valor, ordem, padrao)
+  values (p_grupo, v_valor, coalesce((select max(ordem) from public.legalizacao_opcoes where grupo = p_grupo), 0) + 1, false);
+  return v_valor;
+end;
+$$;
+
+/**
+ * Exclui uma opção personalizada. Se estiver em uso, só exclui quando vier
+ * `p_substituir`: o valor que passa a valer nos registros que a usavam
+ * (string vazia = deixar o campo em branco).
+ */
+create or replace function public.opcao_excluir(p_grupo text, p_valor text, p_substituir text default null)
+returns jsonb
+language plpgsql security definer
+set search_path = ''
+as $$
+declare
+  g public.opcoes_grupos;
+  o public.legalizacao_opcoes;
+  v_uso integer;
+begin
+  if not public.tem_permissao('dados.opcoes.gerenciar') then
+    raise exception 'Você não tem permissão para excluir opções das listas.' using errcode = '42501';
+  end if;
+  select * into o from public.legalizacao_opcoes where grupo = p_grupo and valor = p_valor;
+  if not found then
+    raise exception 'Opção não encontrada.' using errcode = '22023';
+  end if;
+  if o.padrao then
+    raise exception 'A opção "%" é padrão do sistema e não pode ser excluída.', p_valor using errcode = '42501';
+  end if;
+  select * into g from public.opcoes_grupos where grupo = p_grupo;
+  v_uso := public.opcao_uso(p_grupo, p_valor);
+
+  if v_uso > 0 then
+    if p_substituir is null then
+      return jsonb_build_object('ok', false, 'em_uso', v_uso);
+    end if;
+    if p_substituir <> '' and not exists (
+      select 1 from public.legalizacao_opcoes where grupo = p_grupo and valor = p_substituir and valor <> p_valor
+    ) then
+      raise exception 'Escolha uma opção da lista para substituir.' using errcode = '22023';
+    end if;
+    execute format('update public.%I set %I = $1 where %I = $2', g.tabela, g.coluna, g.coluna)
+      using nullif(p_substituir, ''), p_valor;
+  end if;
+
+  delete from public.legalizacao_opcoes where id = o.id;
+  return jsonb_build_object('ok', true, 'substituidos', v_uso);
+end;
+$$;
+
+revoke all on function public.opcao_uso(text, text) from public, anon;
+revoke all on function public.opcao_adicionar(text, text) from public, anon;
+revoke all on function public.opcao_excluir(text, text, text) from public, anon;
+grant execute on function public.opcao_uso(text, text) to authenticated;
+grant execute on function public.opcao_adicionar(text, text) to authenticated;
+grant execute on function public.opcao_excluir(text, text, text) to authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 0025_agenda_central.sql
+-- ---------------------------------------------------------------------
+
+-- =====================================================================
+-- PortalMPC — 0025 — Agenda central: um só lugar para tudo que tem data
+-- ---------------------------------------------------------------------
+-- `calendario_eventos` passa a ser a ESTRUTURA CENTRAL de eventos do portal.
+-- Além dos compromissos criados no próprio calendário (modulo = 'calendario'),
+-- cada módulo publica aqui o que tem data, hora ou prazo — sempre pela mesma
+-- função, `agenda_publicar()`, chamada por gatilho na tabela de origem:
+--
+--   legalizacao_processos  → modulo 'processos'    (prazo do processo)
+--   atribuicoes            → modulo 'atribuicoes'  (próximo prazo do ciclo)
+--   integracoes            → modulo 'integracao'   (reunião e retornos)
+--   legalizacao_empresas   → modulo 'documentos'   (validades — migration 0026)
+--   tarefas                → modulo 'tarefas'      (migration 0027)
+--   prospeccao_atividades  → modulo 'prospeccao'   (migration 0028)
+--
+-- Cada evento guarda a origem (tabela + id + chave), com índice único: criar,
+-- alterar data/responsável/status ou excluir na origem atualiza o MESMO
+-- evento — nunca duplica. Um módulo novo só precisa de um gatilho que chame
+-- `agenda_publicar()`; calendário, agenda individual e notificações vêm juntos.
+--
+-- Os vencimentos do calendário de obrigações conferido no e-Conet ficam em
+-- `calendario_regras` com `fonte = 'econet'` e têm um catálogo próprio, que
+-- permite restaurá-los sem duplicar (`calendario_sincronizar_econet()`).
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- 1. Colunas da estrutura central
+-- ---------------------------------------------------------------------
+alter table public.calendario_eventos
+  add column if not exists modulo           text not null default 'calendario',
+  add column if not exists origem_tabela    text,
+  add column if not exists origem_id        text,
+  add column if not exists origem_chave     text not null default '',
+  add column if not exists link             text,
+  add column if not exists status           text not null default 'pendente',
+  add column if not exists participantes    uuid[] not null default '{}',
+  -- Permissão exigida para ver o evento na visão da equipe (nula = regra do departamento).
+  add column if not exists permissao        text,
+  add column if not exists privado          boolean not null default false,
+  add column if not exists hora_fim         time,
+  -- true: quem conclui é o módulo de origem (tarefa, processo…); false: conclui-se no calendário.
+  add column if not exists status_na_origem boolean not null default false,
+  add column if not exists avisar           boolean not null default true;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'calendario_eventos_status') then
+    alter table public.calendario_eventos
+      add constraint calendario_eventos_status check (status in ('pendente', 'concluido', 'cancelado'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'calendario_eventos_origem') then
+    alter table public.calendario_eventos
+      add constraint calendario_eventos_origem check ((modulo = 'calendario') = (origem_tabela is null));
+  end if;
+end $$;
+
+create unique index if not exists calendario_eventos_origem_uidx
+  on public.calendario_eventos (origem_tabela, origem_id, origem_chave)
+  where origem_tabela is not null;
+create index if not exists calendario_eventos_participantes_idx on public.calendario_eventos using gin (participantes);
+create index if not exists calendario_eventos_modulo_idx on public.calendario_eventos (modulo);
+
+comment on table public.calendario_eventos is
+  'Estrutura central de eventos do portal: compromissos do calendário e tudo que os módulos publicam por agenda_publicar().';
+
+alter table public.calendario_regras
+  add column if not exists fonte        text not null default 'equipe',
+  add column if not exists conferido_em date;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'calendario_regras_fonte') then
+    alter table public.calendario_regras
+      add constraint calendario_regras_fonte check (fonte in ('econet', 'equipe'));
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------
+-- 2. Quem vê e quem escreve
+-- ---------------------------------------------------------------------
+-- Ver: o que é meu (responsável, participante, criador) sempre; compromissos
+-- do calendário pela regra do departamento; eventos de módulo, na visão da
+-- equipe, só com a tela do calendário E a permissão do módulo de origem.
+alter policy calendario_eventos_select on public.calendario_eventos
+  using (
+    public.is_active() and (
+      responsavel_id = (select auth.uid())
+      or (select auth.uid()) = any (participantes)
+      or created_by = (select auth.uid())
+      or (modulo = 'calendario' and public.cal_pode_ver(departamento, visivel_para))
+      or (modulo <> 'calendario' and not privado
+          and public.tem_permissao('tela.calendario')
+          and (permissao is null or public.tem_permissao(permissao)))
+    )
+  );
+
+-- Escrever direto: só compromissos do próprio calendário. Evento de módulo
+-- nasce e muda pela origem (funções SECURITY DEFINER abaixo).
+alter policy calendario_eventos_insert on public.calendario_eventos
+  with check (modulo = 'calendario' and origem_tabela is null and public.cal_pode_editar(departamento));
+alter policy calendario_eventos_update on public.calendario_eventos
+  using (modulo = 'calendario' and public.cal_pode_editar(departamento))
+  with check (modulo = 'calendario' and origem_tabela is null and public.cal_pode_editar(departamento));
+alter policy calendario_eventos_delete on public.calendario_eventos
+  using (modulo = 'calendario' and public.cal_pode_editar(departamento));
+
+-- Concluir: quem tem a tela do calendário, ou o dono do evento mesmo sem ela.
+alter policy calendario_conclusoes_select on public.calendario_conclusoes
+  using (public.is_active());
+alter policy calendario_conclusoes_insert on public.calendario_conclusoes
+  with check (
+    public.is_active() and (concluido_por = (select auth.uid()) or public.is_admin())
+    and (public.tem_permissao('tela.calendario')
+         or exists (select 1 from public.calendario_eventos e
+                    where e.id = split_part(chave, ':', 2)
+                      and (e.responsavel_id = (select auth.uid()) or (select auth.uid()) = any (e.participantes))))
+  );
+alter policy calendario_conclusoes_delete on public.calendario_conclusoes
+  using (public.is_active() and (public.tem_permissao('tela.calendario') or concluido_por = (select auth.uid())));
+
+-- O aviso de designação do calendário (0018/0023) vale só para compromissos
+-- criados no próprio calendário; os de módulo são avisados por agenda_notificar().
+do $$
+declare
+  v_def text := pg_get_functiondef('public.notificar_designacao'::regproc);
+  v_alvo text := 'and (new.data >= current_date or new.recorrencia <> ''nenhuma'')';
+begin
+  if position('new.modulo = ''calendario''' in v_def) = 0 and position(v_alvo in v_def) > 0 then
+    execute replace(v_def, v_alvo, 'and new.modulo = ''calendario'' ' || v_alvo);
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------
+-- 3. Publicar e remover — o serviço que todos os módulos usam
+-- ---------------------------------------------------------------------
+create or replace function public.agenda_rotulo_modulo(p_modulo text)
+returns text
+language sql immutable set search_path = ''
+as $$
+  select case p_modulo
+    when 'calendario'  then 'Compromisso'
+    when 'tarefas'     then 'Tarefa'
+    when 'processos'   then 'Processo de legalização'
+    when 'atribuicoes' then 'Atribuição'
+    when 'integracao'  then 'Integração de cliente'
+    when 'documentos'  then 'Validade de documento'
+    when 'prospeccao'  then 'Prospecção'
+    else initcap(p_modulo)
+  end;
+$$;
+
+create or replace function public.agenda_remover(p_tabela text, p_id text, p_chave text default null)
+returns void
+language plpgsql security definer
+set search_path = ''
+as $$
+begin
+  perform set_config('portal.agenda_sync', '1', true);
+  delete from public.calendario_conclusoes c
+  using public.calendario_eventos e
+  where e.origem_tabela = p_tabela and e.origem_id = p_id
+    and (p_chave is null or e.origem_chave = p_chave)
+    and c.chave like 'e:' || e.id || ':%';
+  delete from public.calendario_eventos e
+  where e.origem_tabela = p_tabela and e.origem_id = p_id
+    and (p_chave is null or e.origem_chave = p_chave);
+  perform set_config('portal.agenda_sync', '', true);
+end;
+$$;
+
+create or replace function public.agenda_publicar(
+  p_modulo text,
+  p_tabela text,
+  p_id text,
+  p_titulo text,
+  p_data date,
+  p_chave text default '',
+  p_hora time default null,
+  p_hora_fim time default null,
+  p_responsaveis uuid[] default '{}',
+  p_status text default 'pendente',
+  p_link text default null,
+  p_permissao text default null,
+  p_descricao text default '',
+  p_departamento text default null,
+  p_categoria text default 'Interna',
+  p_empresa_id uuid default null,
+  p_empresa text default null,
+  p_privado boolean default false,
+  p_avisar boolean default true,
+  p_status_na_origem boolean default true
+)
+returns text
+language plpgsql security definer
+set search_path = ''
+as $$
+declare
+  v_uid   uuid := (select auth.uid());
+  v_resp  uuid[];
+  v_dep   text;
+  v_id    text;
+begin
+  -- Sem data não há o que mostrar no calendário.
+  if p_data is null then
+    perform public.agenda_remover(p_tabela, p_id, coalesce(p_chave, ''));
+    return null;
+  end if;
+
+  select coalesce(array_agg(distinct x), '{}') into v_resp
+  from unnest(coalesce(p_responsaveis, '{}')) x where x is not null;
+
+  v_dep := coalesce(
+    p_departamento,
+    (select public.departamento_de_area(p.area) from public.profiles p where p.id = v_resp[1]),
+    (select public.departamento_de_area(p.area) from public.profiles p where p.id = v_uid),
+    'Matriz');
+
+  insert into public.calendario_eventos as e (
+    titulo, data, hora, hora_fim, tipo, categoria, departamento, responsavel_id, participantes,
+    designado_por, designado_por_nome, notas, empresa_id, empresa,
+    modulo, origem_tabela, origem_id, origem_chave, link, status, permissao, privado,
+    avisar, status_na_origem, created_by
+  ) values (
+    left(btrim(p_titulo), 140), p_data, p_hora, p_hora_fim, '', coalesce(p_categoria, 'Interna'), v_dep,
+    v_resp[1], v_resp,
+    v_uid, (select nome from public.profiles where id = v_uid), coalesce(p_descricao, ''), p_empresa_id, p_empresa,
+    p_modulo, p_tabela, p_id, coalesce(p_chave, ''), p_link, coalesce(p_status, 'pendente'), p_permissao,
+    coalesce(p_privado, false), coalesce(p_avisar, true), coalesce(p_status_na_origem, true), v_uid
+  )
+  on conflict (origem_tabela, origem_id, origem_chave) where origem_tabela is not null
+  do update set
+    titulo = excluded.titulo, data = excluded.data, hora = excluded.hora, hora_fim = excluded.hora_fim,
+    categoria = excluded.categoria, departamento = excluded.departamento,
+    responsavel_id = excluded.responsavel_id, participantes = excluded.participantes,
+    notas = excluded.notas, empresa_id = excluded.empresa_id, empresa = excluded.empresa,
+    modulo = excluded.modulo, link = excluded.link, status = excluded.status,
+    permissao = excluded.permissao, privado = excluded.privado, avisar = excluded.avisar,
+    status_na_origem = excluded.status_na_origem
+  returning e.id into v_id;
+
+  -- A situação de quem manda na própria conclusão espelha em calendario_conclusoes,
+  -- que é o que a grade, os relatórios e os avisos de prazo consultam.
+  if coalesce(p_status_na_origem, true) then
+    perform set_config('portal.agenda_sync', '1', true);
+    delete from public.calendario_conclusoes c
+    where c.chave like 'e:' || v_id || ':%'
+      and (p_status <> 'concluido' or c.chave <> 'e:' || v_id || ':' || to_char(p_data, 'YYYY-MM-DD'));
+    if p_status = 'concluido' then
+      insert into public.calendario_conclusoes (chave, mes, concluido_por, concluido_por_nome)
+      values ('e:' || v_id || ':' || to_char(p_data, 'YYYY-MM-DD'), to_char(p_data, 'YYYY-MM'), v_uid,
+              (select nome from public.profiles where id = v_uid))
+      on conflict (chave) do nothing;
+    end if;
+    perform set_config('portal.agenda_sync', '', true);
+  end if;
+
+  return v_id;
+end;
+$$;
+
+revoke all on function public.agenda_rotulo_modulo(text) from public, anon;
+revoke all on function public.agenda_remover(text, text, text) from public, anon, authenticated;
+revoke all on function public.agenda_publicar(text, text, text, text, date, text, time, time, uuid[], text, text, text, text, text, text, uuid, text, boolean, boolean, boolean) from public, anon, authenticated;
+grant execute on function public.agenda_rotulo_modulo(text) to authenticated;
+
+-- ---------------------------------------------------------------------
+-- 4. Notificações centrais: atribuição, mudança de data e cancelamento
+-- ---------------------------------------------------------------------
+create or replace function public.agenda_notificar()
+returns trigger
+language plpgsql security definer
+set search_path = ''
+as $$
+declare
+  v_ator  uuid := (select auth.uid());
+  v_nome  text;
+  v_hoje  date := public.hoje_brasil();
+  v_link  text;
+  v_quando text;
+  v_antes uuid[] := '{}';
+  v_agora uuid[];
+  p uuid;
+begin
+  -- Sem sessão (migrations, importações em lote): ninguém é avisado.
+  if v_ator is null or new.privado and coalesce(array_length(new.participantes, 1), 0) = 0 then
+    return null;
+  end if;
+  select nome into v_nome from public.profiles where id = v_ator;
+  v_link := coalesce(new.link, '/calendario?data=' || to_char(new.data, 'YYYY-MM-DD') || '&item=e:' || new.id || ':' || to_char(new.data, 'YYYY-MM-DD'));
+  v_quando := to_char(new.data, 'DD/MM/YYYY') || coalesce(' às ' || to_char(new.hora, 'HH24:MI'), '');
+  v_agora := array(select distinct x from unnest(new.participantes || new.responsavel_id) x where x is not null);
+  if tg_op = 'UPDATE' then
+    v_antes := array(select distinct x from unnest(old.participantes || old.responsavel_id) x where x is not null);
+  end if;
+
+  if new.status = 'cancelado' then
+    if tg_op = 'UPDATE' and old.status <> 'cancelado' and new.data >= v_hoje then
+      foreach p in array v_agora loop
+        perform public.notificar(p, 'calendario', 'agenda_cancelada',
+          'Cancelado: ' || new.titulo, coalesce(v_nome, 'O portal') || ' cancelou o item de ' || v_quando || '.',
+          v_link, 'baixa', v_ator, 'calendario_eventos', new.id, new.data, 'agenda:cancelada:' || new.id, '{}'::jsonb, true);
+      end loop;
+    end if;
+    return null;
+  end if;
+  if new.status <> 'pendente' or (new.data < v_hoje and new.recorrencia = 'nenhuma') then
+    return null;
+  end if;
+
+  -- Entrou na agenda de alguém (o calendário próprio já avisa pelo gatilho de designação).
+  if new.modulo <> 'calendario' and new.avisar then
+    foreach p in array v_agora loop
+      if not (p = any (v_antes)) then
+        perform public.notificar(p, 'calendario', 'agenda_atribuida',
+          public.agenda_rotulo_modulo(new.modulo) || ' na sua agenda: ' || new.titulo,
+          concat_ws(' · ', coalesce(v_nome, 'O portal') || ' colocou no seu nome', v_quando),
+          v_link, 'normal', v_ator, 'calendario_eventos', new.id, new.data, 'agenda:atribuida:' || new.id, '{}'::jsonb, true);
+      end if;
+    end loop;
+  end if;
+
+  -- Mudou a data ou a hora: quem já estava no evento fica sabendo.
+  if tg_op = 'UPDATE' and (old.data is distinct from new.data or old.hora is distinct from new.hora) then
+    foreach p in array v_agora loop
+      if p = any (v_antes) then
+        perform public.notificar(p, 'calendario', 'agenda_alterada',
+          'Data alterada: ' || new.titulo,
+          coalesce(v_nome, 'O portal') || ' mudou de ' || to_char(old.data, 'DD/MM/YYYY') || coalesce(' às ' || to_char(old.hora, 'HH24:MI'), '') || ' para ' || v_quando || '.',
+          v_link, 'normal', v_ator, 'calendario_eventos', new.id, new.data, 'agenda:alterada:' || new.id, '{}'::jsonb, true);
+      end if;
+    end loop;
+  end if;
+  return null;
+end;
+$$;
+
+revoke all on function public.agenda_notificar() from public, anon, authenticated;
+
+create or replace trigger trg_agenda_notificar
+  after insert or update of data, hora, responsavel_id, participantes, status on public.calendario_eventos
+  for each row execute function public.agenda_notificar();
+
+-- ---------------------------------------------------------------------
+-- 5. Concluir: no calendário ou no módulo de origem, nunca em dois lugares
+-- ---------------------------------------------------------------------
+create or replace function public.agenda_guardar_conclusao()
+returns trigger
+language plpgsql security definer
+set search_path = ''
+as $$
+declare
+  v_chave text := coalesce(new.chave, old.chave);
+  e public.calendario_eventos;
+begin
+  if current_setting('portal.agenda_sync', true) = '1' or v_chave not like 'e:%' then
+    return coalesce(new, old);
+  end if;
+  select * into e from public.calendario_eventos where id = split_part(v_chave, ':', 2);
+  if found and e.status_na_origem and (select auth.uid()) is not null then
+    raise exception 'Este item é de % — conclua por lá (ou pelo botão do calendário).', public.agenda_rotulo_modulo(e.modulo)
+      using errcode = '42501';
+  end if;
+  return coalesce(new, old);
+end;
+$$;
+
+revoke all on function public.agenda_guardar_conclusao() from public, anon, authenticated;
+
+create or replace trigger trg_agenda_guardar_conclusao
+  before insert or delete on public.calendario_conclusoes
+  for each row execute function public.agenda_guardar_conclusao();
+
+/**
+ * Concluir (ou reabrir) pelo calendário um evento cujo status mora no módulo
+ * de origem: a mudança é feita LÁ, e o gatilho da origem republica o evento.
+ */
+create or replace function public.agenda_concluir(p_evento text, p_concluir boolean default true)
+returns jsonb
+language plpgsql security definer
+set search_path = ''
+as $$
+declare
+  v_uid uuid := (select auth.uid());
+  e public.calendario_eventos;
+begin
+  select * into e from public.calendario_eventos where id = p_evento;
+  if not found then
+    raise exception 'Evento não encontrado.' using errcode = '22023';
+  end if;
+  if not (public.is_active() and (e.responsavel_id = v_uid or v_uid = any (e.participantes) or e.created_by = v_uid
+          or (not e.privado and e.permissao is not null and public.tem_permissao(e.permissao)))) then
+    raise exception 'Você não tem acesso a este item.' using errcode = '42501';
+  end if;
+
+  if e.origem_tabela = 'tarefas' then
+    update public.tarefas
+       set status = case when p_concluir then 'concluido' else 'a_fazer' end
+     where id = e.origem_id::uuid
+       and (status = 'concluido') is distinct from p_concluir;
+  elsif e.origem_tabela = 'prospeccao_atividades' then
+    update public.prospeccao_atividades
+       set concluida = p_concluir, concluida_em = case when p_concluir then now() end
+     where id = e.origem_id::uuid;
+  elsif e.origem_tabela = 'atribuicoes' and p_concluir then
+    perform public.concluir_atribuicao(e.origem_id::uuid, null);
+  else
+    raise exception 'Abra o item em "%" para alterar a situação.', public.agenda_rotulo_modulo(e.modulo)
+      using errcode = '22023';
+  end if;
+  return jsonb_build_object('ok', true, 'modulo', e.modulo);
+end;
+$$;
+
+revoke all on function public.agenda_concluir(text, boolean) from public, anon;
+grant execute on function public.agenda_concluir(text, boolean) to authenticated;
+
+-- ---------------------------------------------------------------------
+-- 6. Ocorrências do período, com origem, link, participantes e situação
+-- ---------------------------------------------------------------------
+create or replace function public.agenda_ocorrencias(p_inicio date, p_fim date)
+returns table (
+  chave text, fonte text, item_id text, titulo text, data date, hora time, prazo date, inicio boolean,
+  departamento text, categoria text, tipo text, modulo text, origem text, link text,
+  responsavel_id uuid, participantes uuid[], responsavel_nome text,
+  empresa_id uuid, empresa text, ref text, status text, status_na_origem boolean
+)
+language plpgsql stable set search_path = ''
+as $$
+declare
+  v_mes date;
+  v_ano int;
+  v_m int;
+  v_feriados date[];
+  v_data date;
+  r record;
+begin
+  if p_fim < p_inicio or p_fim - p_inicio > 400 then
+    raise exception 'Período inválido (máximo de 400 dias).' using errcode = '22023';
+  end if;
+
+  -- Obrigações fixas (e-Conet e da equipe): data calculada, nunca gravada.
+  v_mes := date_trunc('month', p_inicio)::date - interval '1 month';
+  while v_mes <= (date_trunc('month', p_fim)::date + interval '1 month') loop
+    v_ano := extract(year from v_mes)::int;
+    v_m := extract(month from v_mes)::int;
+    select array_agg(f.data) into v_feriados
+    from (
+      select x.data from public.calendario_feriados(v_ano) x
+      union select y.data from public.calendario_feriados(v_ano + 1) y
+      union select z.data from public.calendario_feriados(v_ano - 1) z
+    ) f;
+
+    for r in
+      select * from public.calendario_regras cr
+      where cr.ativo and (cardinality(cr.meses) = 0 or v_m = any (cr.meses))
+    loop
+      v_data := public.calendario_data_regra(r.tipo, r.dia, r.ajuste, r.sabado_util, v_ano, v_m, v_feriados);
+      if v_data is not null and v_data between p_inicio and p_fim then
+        chave := 'r:' || r.id || ':' || to_char(v_data, 'YYYY-MM-DD');
+        fonte := 'regra'; item_id := r.id; titulo := r.nome; data := v_data; hora := null; prazo := v_data;
+        inicio := false; departamento := r.departamento; categoria := r.categoria; tipo := '';
+        modulo := 'obrigacoes'; origem := r.fonte; link := null;
+        responsavel_id := r.responsavel_id;
+        participantes := case when r.responsavel_id is null then '{}'::uuid[] else array[r.responsavel_id] end;
+        responsavel_nome := coalesce((select p.nome from public.profiles p where p.id = r.responsavel_id), r.responsavel_nome);
+        empresa_id := null; empresa := null;
+        ref := public.calendario_ref_label(r.ref, v_ano, v_m);
+        status := 'pendente'; status_na_origem := false;
+        return next;
+      end if;
+    end loop;
+    v_mes := v_mes + interval '1 month';
+  end loop;
+
+  -- Eventos: compromissos do calendário e tudo que os módulos publicaram.
+  for r in
+    select * from public.calendario_eventos ce
+    where ce.categoria <> 'Feriado' and ce.status <> 'cancelado'
+  loop
+    modulo := r.modulo; origem := r.modulo; link := r.link; hora := r.hora;
+    participantes := r.participantes; status := r.status; status_na_origem := r.status_na_origem;
+    fonte := 'evento'; item_id := r.id; departamento := r.departamento; categoria := r.categoria;
+    tipo := r.tipo; responsavel_id := r.responsavel_id;
+    responsavel_nome := coalesce((select p.nome from public.profiles p where p.id = r.responsavel_id), r.responsavel_nome);
+    empresa_id := r.empresa_id; empresa := r.empresa; ref := '';
+
+    if r.tipo = 'Demanda' and r.data_inicio is not null and r.data_inicio < r.data
+       and r.data_inicio between p_inicio and p_fim then
+      chave := 'e:' || r.id || ':' || to_char(r.data, 'YYYY-MM-DD');
+      titulo := '▶ Início: ' || r.titulo; data := r.data_inicio; prazo := r.data; inicio := true;
+      return next;
+    end if;
+
+    inicio := false; titulo := r.titulo;
+    v_mes := date_trunc('month', p_inicio)::date;
+    while v_mes <= p_fim loop
+      v_ano := extract(year from v_mes)::int;
+      v_m := extract(month from v_mes)::int;
+      v_data := null;
+      if r.recorrencia = 'mensal' then
+        v_data := make_date(v_ano, v_m, least(extract(day from r.data)::int,
+                    extract(day from (v_mes + interval '1 month - 1 day'))::int));
+        if v_data < r.data then v_data := null; end if;
+      elsif r.recorrencia = 'anual' then
+        if extract(month from r.data)::int = v_m and v_ano >= extract(year from r.data)::int then
+          v_data := make_date(v_ano, v_m, least(extract(day from r.data)::int,
+                      extract(day from (v_mes + interval '1 month - 1 day'))::int));
+        end if;
+      elsif date_trunc('month', r.data)::date = v_mes then
+        v_data := r.data;
+      end if;
+
+      if v_data is not null and v_data between p_inicio and p_fim then
+        chave := 'e:' || r.id || ':' || to_char(v_data, 'YYYY-MM-DD');
+        data := v_data; prazo := v_data;
+        return next;
+      end if;
+      v_mes := v_mes + interval '1 month';
+    end loop;
+  end loop;
+end;
+$$;
+
+create or replace function public.agenda_periodo(p_inicio date, p_fim date)
+returns table (
+  chave text, fonte text, item_id text, titulo text, data date, hora time, prazo date, inicio boolean,
+  departamento text, categoria text, tipo text, modulo text, origem text, link text,
+  responsavel_id uuid, participantes uuid[], responsavel_nome text,
+  empresa_id uuid, empresa text, ref text, status text, status_na_origem boolean,
+  concluido boolean, concluido_em timestamptz, concluido_por_nome text
+)
+language sql stable set search_path = ''
+as $$
+  select o.chave, o.fonte, o.item_id, o.titulo, o.data, o.hora, o.prazo, o.inicio, o.departamento,
+         o.categoria, o.tipo, o.modulo, o.origem, o.link, o.responsavel_id, o.participantes,
+         o.responsavel_nome, o.empresa_id, o.empresa, o.ref, o.status, o.status_na_origem,
+         (c.chave is not null) as concluido, c.concluido_em,
+         coalesce((select p.nome from public.profiles p where p.id = c.concluido_por), c.concluido_por_nome)
+  from public.agenda_ocorrencias(p_inicio, p_fim) o
+  left join public.calendario_conclusoes c on c.chave = o.chave
+  order by o.data, o.hora nulls first, o.titulo;
+$$;
+
+revoke all on function public.agenda_ocorrencias(date, date) from public, anon;
+revoke all on function public.agenda_periodo(date, date) from public, anon;
+grant execute on function public.agenda_ocorrencias(date, date) to authenticated;
+grant execute on function public.agenda_periodo(date, date) to authenticated;
+
+-- A função antiga continua existindo para quem ainda a chama, agora lendo da nova.
+create or replace function public.calendario_agenda(p_inicio date, p_fim date)
+returns table (
+  chave text, fonte text, item_id text, titulo text, data date, prazo date, inicio boolean,
+  departamento text, categoria text, tipo text, responsavel_id uuid, responsavel_nome text,
+  empresa_id uuid, empresa text, ref text, concluido boolean, concluido_em timestamptz,
+  concluido_por_nome text
+)
+language sql stable set search_path = ''
+as $$
+  select o.chave, o.fonte, o.item_id, o.titulo, o.data, o.prazo, o.inicio, o.departamento,
+         o.categoria, o.tipo, o.responsavel_id, o.responsavel_nome, o.empresa_id, o.empresa, o.ref,
+         o.concluido, o.concluido_em, o.concluido_por_nome
+  from public.agenda_periodo(p_inicio, p_fim) o;
+$$;
+
+-- ---------------------------------------------------------------------
+-- 7. Vencimentos e-Conet: catálogo e sincronização sem duplicar
+-- ---------------------------------------------------------------------
+create table if not exists public.calendario_catalogo_econet (
+  id            text primary key,
+  dados         jsonb not null,
+  conferido_em  date,
+  atualizado_em timestamptz not null default now()
+);
+
+comment on table public.calendario_catalogo_econet is
+  'Calendário de obrigações do Portal Meta Plano (SEED + AJUSTES_ECONET + NOVAS_OBRIGACOES do Codigo.gs). Fonte para restaurar calendario_regras.';
+
+alter table public.calendario_catalogo_econet enable row level security;
+
+do $$
+begin
+  if not exists (select 1 from pg_policies where tablename = 'calendario_catalogo_econet' and policyname = 'calendario_catalogo_econet_select') then
+    create policy calendario_catalogo_econet_select on public.calendario_catalogo_econet
+      for select to authenticated using (public.tem_permissao('tela.calendario'));
+  end if;
+end $$;
+
+-- O catálogo é montado a partir das obrigações que a migration 0017 semeou.
+-- Num banco em que elas foram apagadas, o retrato vem da trilha de auditoria.
+do $$
+declare
+  v_ids text[] := array['alvaras','caged','certidoes','conselho-rt','darf-inss-irrf','das-mei','das-simples','dasn-simei','dbf',
+    'dctfweb','decimo-1','decimo-2','defis','destda','dipam-b','dirbi','ecd','ecf','efd-contrib','efd-icms-ipi','efd-reinf',
+    'esocial','faturamento-matriz','fgts','holerite','icms','informes','inss-13','ipi','irpf','irpj-csll-mensal','irpj-csll-tri',
+    'iss','licencas-sanitarias','pis-cofins','rbt12-rba','salarios','sieg','sindicato'];
+  v_campos text[] := array['id','nome','departamento','categoria','regime','tipo','dia','ajuste','meses','ref','descricao','ativo','sabado_util'];
+begin
+  insert into public.calendario_catalogo_econet (id, dados)
+  select r.id, (select jsonb_object_agg(k, to_jsonb(r) -> k) from unnest(v_campos) k)
+  from public.calendario_regras r where r.id = any (v_ids)
+  on conflict (id) do nothing;
+
+  insert into public.calendario_catalogo_econet (id, dados)
+  select distinct on (a.registro_id) a.registro_id,
+         (select jsonb_object_agg(k, a.dados_anteriores -> k) from unnest(v_campos) k)
+  from public.audit_logs a
+  where a.tabela = 'calendario_regras' and a.acao = 'DELETE' and a.registro_id = any (v_ids)
+  order by a.registro_id, a.created_at desc
+  on conflict (id) do nothing;
+
+  -- "Sindicato" nasce desligada no app antigo (sem data fixa).
+  update public.calendario_catalogo_econet set dados = jsonb_set(dados, '{ativo}', 'false') where id = 'sindicato';
+  -- As quatro que o Codigo.gs marca como "conferidas no Econet (out/2026, SP)".
+  update public.calendario_catalogo_econet set conferido_em = date '2026-10-01'
+  where id in ('dctfweb', 'icms', 'efd-icms-ipi', 'iss') and conferido_em is null;
+end $$;
+
+/**
+ * Traz para o calendário as obrigações do catálogo que estiverem faltando.
+ * Com p_redefinir, também devolve as existentes ao que está no catálogo
+ * (mantendo o responsável definido pela equipe). Nunca duplica: a chave é o id.
+ */
+create or replace function public.calendario_sincronizar_econet(p_redefinir boolean default false)
+returns jsonb
+language plpgsql security definer
+set search_path = ''
+as $$
+declare
+  v_incluidas int := 0;
+  v_redefinidas int := 0;
+begin
+  if (select auth.uid()) is not null and not public.tem_permissao('dados.calendario.todos') then
+    raise exception 'Só quem administra o calendário de todos os departamentos pode sincronizar as obrigações.' using errcode = '42501';
+  end if;
+
+  with novas as (
+    insert into public.calendario_regras (id, nome, departamento, categoria, regime, tipo, dia, ajuste, meses, ref, descricao, ativo, sabado_util, fonte, conferido_em)
+    select c.id, c.dados ->> 'nome', c.dados ->> 'departamento', c.dados ->> 'categoria', c.dados ->> 'regime',
+           c.dados ->> 'tipo', (c.dados ->> 'dia')::smallint, c.dados ->> 'ajuste',
+           coalesce(array(select jsonb_array_elements_text(c.dados -> 'meses')::smallint), '{}'),
+           coalesce(c.dados ->> 'ref', ''), coalesce(c.dados ->> 'descricao', ''),
+           coalesce((c.dados ->> 'ativo')::boolean, true), coalesce((c.dados ->> 'sabado_util')::boolean, false),
+           case when c.dados ->> 'categoria' in ('Federal', 'Estadual', 'Municipal', 'Trabalhista') then 'econet' else 'equipe' end,
+           c.conferido_em
+    from public.calendario_catalogo_econet c
+    on conflict (id) do nothing
+    returning 1
+  ) select count(*) into v_incluidas from novas;
+
+  if p_redefinir then
+    with mudadas as (
+      update public.calendario_regras r
+         set nome = c.dados ->> 'nome', departamento = c.dados ->> 'departamento', categoria = c.dados ->> 'categoria',
+             regime = c.dados ->> 'regime', tipo = c.dados ->> 'tipo', dia = (c.dados ->> 'dia')::smallint,
+             ajuste = c.dados ->> 'ajuste',
+             meses = coalesce(array(select jsonb_array_elements_text(c.dados -> 'meses')::smallint), '{}'),
+             ref = coalesce(c.dados ->> 'ref', ''), descricao = coalesce(c.dados ->> 'descricao', ''),
+             ativo = coalesce((c.dados ->> 'ativo')::boolean, true),
+             sabado_util = coalesce((c.dados ->> 'sabado_util')::boolean, false)
+        from public.calendario_catalogo_econet c
+       where c.id = r.id
+      returning 1
+    ) select count(*) into v_redefinidas from mudadas;
+  end if;
+
+  -- Marca a origem das que já existiam.
+  update public.calendario_regras r
+     set fonte = case when r.categoria in ('Federal', 'Estadual', 'Municipal', 'Trabalhista') then 'econet' else 'equipe' end,
+         conferido_em = coalesce(r.conferido_em, c.conferido_em)
+    from public.calendario_catalogo_econet c
+   where c.id = r.id
+     and r.fonte is distinct from case when r.categoria in ('Federal', 'Estadual', 'Municipal', 'Trabalhista') then 'econet' else 'equipe' end;
+
+  return jsonb_build_object('incluidas', v_incluidas, 'redefinidas', v_redefinidas,
+                            'catalogo', (select count(*) from public.calendario_catalogo_econet));
+end;
+$$;
+
+revoke all on function public.calendario_sincronizar_econet(boolean) from public, anon;
+grant execute on function public.calendario_sincronizar_econet(boolean) to authenticated;
+
+-- Importa agora (restaura o que foi apagado, sem tocar no que existir).
+select public.calendario_sincronizar_econet(false);
+
+-- ---------------------------------------------------------------------
+-- 8. Módulos que já existiam passam a publicar na agenda
+-- ---------------------------------------------------------------------
+create or replace function public.agenda_sinc_processo(p public.legalizacao_processos)
+returns void
+language plpgsql security definer
+set search_path = ''
+as $$
+begin
+  perform public.agenda_publicar(
+    p_modulo => 'processos', p_tabela => 'legalizacao_processos', p_id => p.id::text,
+    p_titulo => coalesce(p.tipo_servico, 'Processo') || ' — ' || p.empresa,
+    p_data => p.prazo,
+    p_responsaveis => array[p.responsavel_id],
+    p_status => case when p.status in ('Concluído', 'Arquivado') then 'concluido'
+                     when p.status in ('Cancelado', 'Indeferido') then 'cancelado' else 'pendente' end,
+    p_link => '/controle-legalizacao?processo=' || p.id,
+    p_permissao => 'tela.processos',
+    p_descricao => concat_ws(' · ', 'Status: ' || p.status, p.orgao, 'Próxima ação: ' || p.proxima_acao, 'Protocolo ' || p.protocolo),
+    p_departamento => 'Legalização', p_categoria => 'Interna',
+    p_empresa_id => p.empresa_id, p_empresa => p.empresa,
+    -- A designação do processo já gera o próprio aviso (0018).
+    p_avisar => false);
+end;
+$$;
+
+create or replace function public.agenda_sinc_atribuicao(a public.atribuicoes)
+returns void
+language plpgsql security definer
+set search_path = ''
+as $$
+begin
+  perform public.agenda_publicar(
+    p_modulo => 'atribuicoes', p_tabela => 'atribuicoes', p_id => a.id::text,
+    p_titulo => a.titulo,
+    p_data => case when a.ativa then a.proximo_prazo end,
+    p_responsaveis => array[a.responsavel_id],
+    p_link => '/atribuicoes', p_permissao => 'tela.atribuicoes',
+    p_descricao => coalesce(a.descricao, ''),
+    p_departamento => public.departamento_de_area(a.area), p_categoria => 'Interna',
+    p_avisar => false);
+end;
+$$;
+
+create or replace function public.agenda_sinc_integracao(i public.integracoes)
+returns void
+language plpgsql security definer
+set search_path = ''
+as $$
+declare
+  v_data text := i.ficha ->> 'dataReuniao';
+  v_empresa text := coalesce(nullif(i.ficha ->> 'empresa', ''), 'Cliente');
+begin
+  -- Aberta a partir de uma reunião do calendário: o evento já existe, não duplica.
+  perform public.agenda_publicar(
+    p_modulo => 'integracao', p_tabela => 'integracoes', p_id => i.id,
+    p_titulo => 'Reunião de Integração — ' || v_empresa,
+    p_data => case when i.evento_id is null and v_data ~ '^\d{4}-\d{2}-\d{2}$' then v_data::date end,
+    p_responsaveis => array[i.criado_por],
+    p_link => '/integracao-clientes/' || i.id, p_permissao => 'tela.integracao',
+    p_descricao => concat_ws(' · ', i.ficha ->> 'modalidade', 'Contato: ' || nullif(i.ficha ->> 'canal', '')),
+    p_departamento => 'Qualidade', p_categoria => 'Interna',
+    p_empresa_id => i.empresa_id, p_empresa => v_empresa,
+    p_status_na_origem => false);
+end;
+$$;
+
+create or replace function public.agenda_sinc_integracao_depto(d public.integracao_departamentos)
+returns void
+language plpgsql security definer
+set search_path = ''
+as $$
+declare
+  v_data text := d.dados ->> 'retorno';
+  i public.integracoes;
+begin
+  select * into i from public.integracoes where id = d.integracao_id;
+  if not found then return; end if;
+  perform public.agenda_publicar(
+    p_modulo => 'integracao', p_tabela => 'integracoes', p_id => d.integracao_id,
+    p_chave => 'retorno:' || d.departamento,
+    p_titulo => 'Retorno de acompanhamento — ' || coalesce(nullif(i.ficha ->> 'empresa', ''), 'Cliente'),
+    p_data => case when v_data ~ '^\d{4}-\d{2}-\d{2}$' then v_data::date end,
+    p_responsaveis => array[coalesce(d.finalizado_por, d.updated_by)],
+    p_link => '/integracao-clientes/' || d.integracao_id || '?dept=' || d.departamento,
+    p_permissao => 'tela.integracao',
+    p_descricao => 'Combinado na integração (' || d.departamento || ').',
+    p_departamento => d.departamento, p_categoria => 'Interna',
+    p_empresa_id => i.empresa_id, p_empresa => i.ficha ->> 'empresa',
+    p_status_na_origem => false);
+end;
+$$;
+
+create or replace function public.agenda_gatilho_origem()
+returns trigger
+language plpgsql security definer
+set search_path = ''
+as $$
+begin
+  if tg_op = 'DELETE' then
+    if tg_table_name = 'integracao_departamentos' then
+      perform public.agenda_remover('integracoes', old.integracao_id, 'retorno:' || old.departamento);
+    else
+      perform public.agenda_remover(tg_table_name, old.id::text, null);
+    end if;
+    return old;
+  end if;
+  if tg_table_name = 'legalizacao_processos' then perform public.agenda_sinc_processo(new);
+  elsif tg_table_name = 'atribuicoes' then perform public.agenda_sinc_atribuicao(new);
+  elsif tg_table_name = 'integracoes' then perform public.agenda_sinc_integracao(new);
+  elsif tg_table_name = 'integracao_departamentos' then perform public.agenda_sinc_integracao_depto(new);
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public.agenda_sinc_processo(public.legalizacao_processos) from public, anon, authenticated;
+revoke all on function public.agenda_sinc_atribuicao(public.atribuicoes) from public, anon, authenticated;
+revoke all on function public.agenda_sinc_integracao(public.integracoes) from public, anon, authenticated;
+revoke all on function public.agenda_sinc_integracao_depto(public.integracao_departamentos) from public, anon, authenticated;
+revoke all on function public.agenda_gatilho_origem() from public, anon, authenticated;
+
+create or replace trigger trg_agenda_processos
+  after insert or update or delete on public.legalizacao_processos
+  for each row execute function public.agenda_gatilho_origem();
+create or replace trigger trg_agenda_atribuicoes
+  after insert or update or delete on public.atribuicoes
+  for each row execute function public.agenda_gatilho_origem();
+create or replace trigger trg_agenda_integracoes
+  after insert or update or delete on public.integracoes
+  for each row execute function public.agenda_gatilho_origem();
+create or replace trigger trg_agenda_integracao_departamentos
+  after insert or update or delete on public.integracao_departamentos
+  for each row execute function public.agenda_gatilho_origem();
+
+-- O que já existe entra na agenda agora.
+select public.agenda_sinc_processo(p) from public.legalizacao_processos p;
+select public.agenda_sinc_atribuicao(a) from public.atribuicoes a;
+select public.agenda_sinc_integracao(i) from public.integracoes i;
+select public.agenda_sinc_integracao_depto(d) from public.integracao_departamentos d;
+
+-- ---------------------------------------------------------------------
+-- 9. Avisos de prazo passam a ler a agenda central
+-- ---------------------------------------------------------------------
+create or replace function public.sincronizar_minhas_notificacoes()
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_uid   uuid := (select auth.uid());
+  v_hoje  date := public.hoje_brasil();
+  v_vivas text[] := '{}';
+  v_chave text;
+  v_dias  int;
+  r record;
+begin
+  if v_uid is null or not public.is_active() then
+    return '{}'::jsonb;
+  end if;
+
+  -- 1. Processos do Controle Legalização sob minha responsabilidade
+  for r in
+    select p.id, p.empresa, p.tipo_servico, p.orgao, p.prazo
+    from public.legalizacao_processos p
+    where p.responsavel_id = v_uid
+      and not public.processo_encerrado(p.status)
+      and p.prazo is not null
+      and p.prazo <= v_hoje + 3
+  loop
+    v_dias := r.prazo - v_hoje;
+    v_chave := 'prazo:processo:' || r.id;
+    perform public.notificar(
+      v_uid, 'prazo', 'processo_prazo',
+      case when v_dias < 0 then 'Processo atrasado há ' || abs(v_dias) || ' dia(s): ' || r.empresa
+           when v_dias = 0 then 'Processo vence hoje: ' || r.empresa
+           else 'Processo vence em ' || v_dias || ' dia(s): ' || r.empresa end,
+      concat_ws(' · ', coalesce(r.tipo_servico, 'Processo'), r.orgao, 'prazo ' || to_char(r.prazo, 'DD/MM/YYYY')),
+      '/controle-legalizacao?processo=' || r.id,
+      case when v_dias < 0 then 'urgente' else 'alta' end,
+      null, 'legalizacao_processos', r.id::text, r.prazo, v_chave,
+      jsonb_build_object('situacao', case when v_dias < 0 then 'atrasado' else 'atencao' end));
+    v_vivas := v_vivas || v_chave;
+  end loop;
+
+  -- 2. Atribuições recorrentes
+  for r in
+    select a.id, a.titulo, a.proximo_prazo, a.alerta_dias_antes
+    from public.atribuicoes a
+    where a.ativa and a.responsavel_id = v_uid
+      and a.proximo_prazo - v_hoje <= a.alerta_dias_antes
+  loop
+    v_dias := r.proximo_prazo - v_hoje;
+    v_chave := 'prazo:atribuicao:' || r.id || ':' || r.proximo_prazo;
+    perform public.notificar(
+      v_uid, 'prazo', 'atribuicao_prazo',
+      case when v_dias < 0 then 'Responsabilidade atrasada: ' || r.titulo
+           when v_dias = 0 then 'Vence hoje: ' || r.titulo
+           else 'Vence em ' || v_dias || ' dia(s): ' || r.titulo end,
+      'Prazo ' || to_char(r.proximo_prazo, 'DD/MM/YYYY') || '. Conclua o ciclo para liberar o próximo.',
+      '/atribuicoes', case when v_dias < 0 then 'urgente' else 'alta' end,
+      null, 'atribuicoes', r.id::text, r.proximo_prazo, v_chave,
+      jsonb_build_object('acao', 'concluir_atribuicao', 'atribuicao_id', r.id));
+    v_vivas := v_vivas || v_chave;
+  end loop;
+
+  -- 3. Agenda central: obrigações, compromissos, tarefas, prospecção, integração…
+  --    tudo que está no meu nome (responsável ou participante) e não foi concluído.
+  --    Processos, atribuições e documentos têm aviso próprio acima e abaixo.
+  for r in
+    select o.* from public.agenda_periodo(v_hoje - 45, v_hoje + 3) o
+    where (o.responsavel_id = v_uid or v_uid = any (o.participantes))
+      and not o.concluido and not o.inicio
+      and o.modulo not in ('processos', 'atribuicoes', 'documentos')
+  loop
+    v_dias := r.prazo - v_hoje;
+    v_chave := 'prazo:calendario:' || r.chave;
+    perform public.notificar(
+      v_uid, 'prazo', 'calendario_prazo',
+      case when v_dias < 0 then public.agenda_rotulo_modulo(case when r.fonte = 'regra' then 'obrigação' else r.modulo end) || ' em atraso: ' || r.titulo
+           when v_dias = 0 then 'Vence hoje: ' || r.titulo
+           else 'Vence em ' || v_dias || ' dia(s): ' || r.titulo end,
+      concat_ws(' · ', r.departamento, nullif(r.ref, ''), 'prazo ' || to_char(r.prazo, 'DD/MM/YYYY') || coalesce(' às ' || to_char(r.hora, 'HH24:MI'), '')),
+      coalesce(r.link, '/calendario?data=' || to_char(r.prazo, 'YYYY-MM-DD') || '&item=' || r.chave),
+      case when v_dias < 0 then 'urgente' else 'alta' end,
+      null, 'calendario', r.chave, r.prazo, v_chave,
+      case when r.status_na_origem
+           then jsonb_build_object('acao', 'concluir_agenda', 'evento_id', r.item_id)
+           else jsonb_build_object('acao', 'concluir_calendario', 'chave_calendario', r.chave) end);
+    v_vivas := v_vivas || v_chave;
+  end loop;
+
+  -- 4. Documentos das empresas pelas quais sou responsável
+  for r in
+    select e.id, e.razao_social, d.documento, d.validade
+    from public.legalizacao_empresas e
+    cross join lateral (values
+      ('AVCB / CLCB', e.avcb_clcb_validade),
+      ('Vigilância Sanitária', e.vigilancia_sanitaria_validade),
+      ('Responsável técnico', e.validade_data)
+    ) as d(documento, validade)
+    where e.responsavel_id = v_uid
+      and d.validade is not null
+      and d.validade <= v_hoje + 30
+      and d.validade >= v_hoje - 90
+  loop
+    v_dias := r.validade - v_hoje;
+    v_chave := 'prazo:documento:' || r.id || ':' || r.documento || ':' || r.validade;
+    perform public.notificar(
+      v_uid, 'prazo', 'documento_validade',
+      case when v_dias < 0 then r.documento || ' vencido: ' || r.razao_social
+           else r.documento || ' vence em ' || v_dias || ' dia(s): ' || r.razao_social end,
+      'Validade ' || to_char(r.validade, 'DD/MM/YYYY') || '. Abra um processo de renovação no Controle Legalização.',
+      '/legalizacao?empresa=' || r.id,
+      case when v_dias < 0 then 'urgente' when v_dias <= 7 then 'alta' else 'normal' end,
+      null, 'legalizacao_empresas', r.id::text, r.validade, v_chave, '{}'::jsonb);
+    v_vivas := v_vivas || v_chave;
+  end loop;
+
+  -- 5. O que deixou de ser problema se resolve sozinho
+  update public.notificacoes n
+  set concluida_em = now(),
+      lida_em = coalesce(n.lida_em, now()),
+      dados = n.dados || '{"resolvida_automaticamente": true}'::jsonb,
+      updated_at = now()
+  where n.usuario_id = v_uid
+    and n.categoria = 'prazo'
+    and n.concluida_em is null
+    and n.chave is not null
+    and not (n.chave = any (v_vivas));
+
+  return public.contar_notificacoes();
+end;
+$$;
+
+revoke all on function public.sincronizar_minhas_notificacoes() from public, anon;
+grant execute on function public.sincronizar_minhas_notificacoes() to authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 0026_empresas_situacao_e_movimentacoes.sql
+-- ---------------------------------------------------------------------
+
+-- =====================================================================
+-- PortalMPC — 0026 — Empresas ativas/inativas, histórico de movimentações
+--                    e documentos
+-- ---------------------------------------------------------------------
+-- * `situacao` (ativa | inativa) é a situação da empresa NA CARTEIRA do
+--   escritório, com data e motivo da saída. Empresa que sai não é apagada:
+--   fica inativa, com tudo preservado, e pode ser reativada.
+-- * `empresa_movimentacoes` é a linha do tempo de cada empresa. Só aceita
+--   INSERT: nada é alterado nem apagado depois de registrado. Mudanças de
+--   regime, razão social, cidade, sócios, responsável e situação entram
+--   sozinhas, por gatilho, com a situação anterior e a nova.
+-- * `empresa_documentos`: arquivos ligados à empresa ou a uma movimentação.
+-- * As validades (AVCB, Vigilância, RT) das empresas ativas vão para a
+--   agenda central.
+-- =====================================================================
+
+alter table public.legalizacao_empresas
+  add column if not exists situacao     text not null default 'ativa',
+  add column if not exists data_saida   date,
+  add column if not exists motivo_saida text;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'legalizacao_empresas_situacao') then
+    alter table public.legalizacao_empresas
+      add constraint legalizacao_empresas_situacao check (situacao in ('ativa', 'inativa'));
+  end if;
+end $$;
+
+create index if not exists legalizacao_empresas_situacao_idx on public.legalizacao_empresas (situacao);
+
+-- Excluir de vez fica só com administradores (cadastro feito por engano).
+-- Quem tinha "excluir" passa a INATIVAR, que preserva os dados.
+alter policy legalizacao_empresas_delete on public.legalizacao_empresas
+  using (public.is_admin());
+
+-- ---------------------------------------------------------------------
+-- Linha do tempo
+-- ---------------------------------------------------------------------
+create table if not exists public.empresa_movimentacoes (
+  id                 uuid primary key default gen_random_uuid(),
+  empresa_id         uuid not null references public.legalizacao_empresas (id) on delete cascade,
+  tipo               text not null,
+  data_ocorrencia    date not null default current_date,
+  descricao          text not null default '',
+  situacao_anterior  text,
+  nova_situacao      text,
+  campo              text,
+  automatica         boolean not null default false,
+  anexos             jsonb not null default '[]'::jsonb,
+  registrado_por     uuid references public.profiles (id) on delete set null default auth.uid(),
+  registrado_por_nome text,
+  registrado_em      timestamptz not null default now(),
+  constraint empresa_movimentacoes_tipo check (length(btrim(tipo)) between 1 and 80),
+  constraint empresa_movimentacoes_anexos check (jsonb_typeof(anexos) = 'array')
+);
+
+comment on table public.empresa_movimentacoes is
+  'Histórico de movimentações de cada empresa. Somente inclusão: o que foi registrado não muda nem some.';
+
+create index if not exists empresa_movimentacoes_empresa_idx on public.empresa_movimentacoes (empresa_id, data_ocorrencia desc, registrado_em desc);
+
+alter table public.empresa_movimentacoes enable row level security;
+
+do $$
+begin
+  if not exists (select 1 from pg_policies where tablename = 'empresa_movimentacoes' and policyname = 'empresa_movimentacoes_select') then
+    create policy empresa_movimentacoes_select on public.empresa_movimentacoes
+      for select to authenticated using (public.can_read_legalizacao());
+    create policy empresa_movimentacoes_insert on public.empresa_movimentacoes
+      for insert to authenticated with check (public.can_write_legalizacao());
+    -- Sem políticas de UPDATE e DELETE: o histórico é permanente.
+  end if;
+end $$;
+
+create or replace function public.empresa_movimentacao_carimbo()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if tg_op = 'UPDATE' then
+    raise exception 'O histórico de movimentações não pode ser alterado. Registre uma nova movimentação.' using errcode = '42501';
+  end if;
+  if (select auth.uid()) is not null then
+    new.registrado_por := (select auth.uid());
+    new.registrado_em := now();
+    -- Só os gatilhos do portal marcam uma movimentação como automática.
+    if current_setting('portal.mov_auto', true) is distinct from '1' then
+      new.automatica := false;
+    end if;
+  end if;
+  new.registrado_por_nome := coalesce((select nome from public.profiles where id = new.registrado_por), new.registrado_por_nome);
+  new.tipo := btrim(new.tipo);
+  return new;
+end;
+$$;
+
+revoke all on function public.empresa_movimentacao_carimbo() from public, anon, authenticated;
+
+create or replace trigger trg_empresa_movimentacao_carimbo
+  before insert or update on public.empresa_movimentacoes
+  for each row execute function public.empresa_movimentacao_carimbo();
+
+-- Situação e status da planilha andam juntos.
+create or replace function public.empresa_situacao_coerente()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+declare
+  v_inativos text[] := array['INATIVO', 'BAIXADO'];
+begin
+  if tg_op = 'INSERT' then
+    if new.status = any (v_inativos) then new.situacao := 'inativa'; end if;
+  else
+    -- Mudou o status na célula: a situação acompanha.
+    if new.status is distinct from old.status and new.situacao = old.situacao then
+      if new.status = any (v_inativos) then new.situacao := 'inativa';
+      elsif old.status = any (v_inativos) then new.situacao := 'ativa';
+      end if;
+    end if;
+  end if;
+
+  if new.situacao = 'inativa' then
+    new.data_saida := coalesce(new.data_saida, public.hoje_brasil());
+    if not (new.status = any (v_inativos)) then new.status := 'INATIVO'; end if;
+  else
+    if tg_op = 'UPDATE' and old.situacao = 'inativa' then
+      new.data_saida := null;
+      new.motivo_saida := null;
+    end if;
+    if new.status = any (v_inativos) then new.status := 'ATIVO'; end if;
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public.empresa_situacao_coerente() from public, anon, authenticated;
+
+create or replace trigger trg_empresa_situacao_coerente
+  before insert or update on public.legalizacao_empresas
+  for each row execute function public.empresa_situacao_coerente();
+
+-- Registra sozinho o que muda no cadastro.
+create or replace function public.empresa_registrar_movimentacoes()
+returns trigger
+language plpgsql security definer
+set search_path = ''
+as $$
+declare
+  v_obs text := nullif(current_setting('portal.mov_descricao', true), '');
+  v_data date := coalesce(nullif(current_setting('portal.mov_data', true), '')::date, public.hoje_brasil());
+  v_nome_ant text;
+  v_nome_novo text;
+begin
+  perform set_config('portal.mov_auto', '1', true);
+
+  if tg_op = 'INSERT' then
+    insert into public.empresa_movimentacoes (empresa_id, tipo, data_ocorrencia, descricao, nova_situacao, campo, automatica)
+    values (new.id, 'Entrada de empresa', coalesce(new.data_inicio, public.hoje_brasil()),
+            'Empresa cadastrada na carteira.', concat_ws(' · ', new.tributacao, new.cidade), 'situacao', true);
+    perform set_config('portal.mov_auto', '', true);
+    return new;
+  end if;
+
+  if new.situacao is distinct from old.situacao then
+    if new.situacao = 'inativa' then
+      insert into public.empresa_movimentacoes (empresa_id, tipo, data_ocorrencia, descricao, situacao_anterior, nova_situacao, campo, automatica)
+      values (new.id, 'Saída de empresa', coalesce(new.data_saida, v_data),
+              concat_ws(' — ', 'Motivo: ' || new.motivo_saida, v_obs), 'Ativa', 'Inativa', 'situacao', true);
+    else
+      insert into public.empresa_movimentacoes (empresa_id, tipo, data_ocorrencia, descricao, situacao_anterior, nova_situacao, campo, automatica)
+      values (new.id, 'Reativação', v_data,
+              concat_ws(' — ', 'Saída anterior em ' || to_char(old.data_saida, 'DD/MM/YYYY') || coalesce(' (' || old.motivo_saida || ')', ''), v_obs),
+              'Inativa', 'Ativa', 'situacao', true);
+    end if;
+  end if;
+
+  if new.tributacao is distinct from old.tributacao then
+    insert into public.empresa_movimentacoes (empresa_id, tipo, data_ocorrencia, descricao, situacao_anterior, nova_situacao, campo, automatica)
+    values (new.id, 'Alteração de regime tributário', v_data, coalesce(v_obs, ''), old.tributacao, new.tributacao, 'tributacao', true);
+  end if;
+  if new.razao_social is distinct from old.razao_social then
+    insert into public.empresa_movimentacoes (empresa_id, tipo, data_ocorrencia, descricao, situacao_anterior, nova_situacao, campo, automatica)
+    values (new.id, 'Alteração de razão social', v_data, coalesce(v_obs, ''), old.razao_social, new.razao_social, 'razao_social', true);
+  end if;
+  if new.cidade is distinct from old.cidade then
+    insert into public.empresa_movimentacoes (empresa_id, tipo, data_ocorrencia, descricao, situacao_anterior, nova_situacao, campo, automatica)
+    values (new.id, 'Mudança de endereço', v_data, coalesce(v_obs, 'Cidade alterada no cadastro.'), old.cidade, new.cidade, 'cidade', true);
+  end if;
+  if new.socio is distinct from old.socio then
+    insert into public.empresa_movimentacoes (empresa_id, tipo, data_ocorrencia, descricao, situacao_anterior, nova_situacao, campo, automatica)
+    values (new.id, 'Alteração de sócios', v_data, coalesce(v_obs, ''), old.socio, new.socio, 'socio', true);
+  end if;
+  if new.responsavel_id is distinct from old.responsavel_id then
+    select nome into v_nome_ant from public.profiles where id = old.responsavel_id;
+    select nome into v_nome_novo from public.profiles where id = new.responsavel_id;
+    insert into public.empresa_movimentacoes (empresa_id, tipo, data_ocorrencia, descricao, situacao_anterior, nova_situacao, campo, automatica)
+    values (new.id, 'Alteração de responsável', v_data, coalesce(v_obs, 'Responsável pelo atendimento.'), v_nome_ant, v_nome_novo, 'responsavel_id', true);
+  end if;
+  if new.cnpj is distinct from old.cnpj or new.responsavel_tecnico is distinct from old.responsavel_tecnico
+     or new.inscricao_municipal is distinct from old.inscricao_municipal or new.tipo is distinct from old.tipo then
+    insert into public.empresa_movimentacoes (empresa_id, tipo, data_ocorrencia, descricao, situacao_anterior, nova_situacao, campo, automatica)
+    select new.id, 'Alteração cadastral', v_data, x.rotulo, x.antes, x.depois, x.campo, true
+    from (values
+      ('cnpj', 'CNPJ', old.cnpj, new.cnpj),
+      ('responsavel_tecnico', 'Responsável técnico', old.responsavel_tecnico, new.responsavel_tecnico),
+      ('inscricao_municipal', 'Inscrição municipal', old.inscricao_municipal, new.inscricao_municipal),
+      ('tipo', 'Tipo', old.tipo, new.tipo)
+    ) as x(campo, rotulo, antes, depois)
+    where x.antes is distinct from x.depois;
+  end if;
+
+  perform set_config('portal.mov_auto', '', true);
+  return new;
+end;
+$$;
+
+revoke all on function public.empresa_registrar_movimentacoes() from public, anon, authenticated;
+
+create or replace trigger trg_empresa_registrar_movimentacoes
+  after insert or update on public.legalizacao_empresas
+  for each row execute function public.empresa_registrar_movimentacoes();
+
+-- Quem já estava na base ganha o marco de entrada (uma vez).
+insert into public.empresa_movimentacoes (empresa_id, tipo, data_ocorrencia, descricao, nova_situacao, campo, automatica, registrado_por, registrado_em)
+select e.id, 'Entrada de empresa', coalesce(e.data_inicio, e.created_at::date),
+       'Empresa na carteira (registro inicial do histórico).', concat_ws(' · ', e.tributacao, e.cidade), 'situacao', true, null, e.created_at
+from public.legalizacao_empresas e
+where not exists (select 1 from public.empresa_movimentacoes m where m.empresa_id = e.id);
+
+/** Saída da carteira: inativa, guarda data e motivo e registra na linha do tempo. */
+create or replace function public.empresa_inativar(p_empresa uuid, p_data date, p_motivo text, p_observacao text default null)
+returns void
+language plpgsql security definer
+set search_path = ''
+as $$
+begin
+  if not public.can_write_legalizacao() then
+    raise exception 'Você não tem permissão para inativar empresas.' using errcode = '42501';
+  end if;
+  if coalesce(btrim(p_motivo), '') = '' then
+    raise exception 'Informe o motivo da saída.' using errcode = '22023';
+  end if;
+  perform set_config('portal.mov_descricao', coalesce(p_observacao, ''), true);
+  update public.legalizacao_empresas
+     set situacao = 'inativa', data_saida = coalesce(p_data, public.hoje_brasil()), motivo_saida = btrim(p_motivo)
+   where id = p_empresa and situacao = 'ativa';
+  if not found then
+    raise exception 'Empresa não encontrada ou já inativa.' using errcode = '22023';
+  end if;
+  perform set_config('portal.mov_descricao', '', true);
+end;
+$$;
+
+create or replace function public.empresa_reativar(p_empresa uuid, p_data date default null, p_observacao text default null)
+returns void
+language plpgsql security definer
+set search_path = ''
+as $$
+begin
+  if not public.can_write_legalizacao() then
+    raise exception 'Você não tem permissão para reativar empresas.' using errcode = '42501';
+  end if;
+  perform set_config('portal.mov_descricao', coalesce(p_observacao, ''), true);
+  perform set_config('portal.mov_data', coalesce(p_data::text, ''), true);
+  update public.legalizacao_empresas set situacao = 'ativa' where id = p_empresa and situacao = 'inativa';
+  if not found then
+    raise exception 'Empresa não encontrada ou já ativa.' using errcode = '22023';
+  end if;
+  perform set_config('portal.mov_descricao', '', true);
+  perform set_config('portal.mov_data', '', true);
+end;
+$$;
+
+revoke all on function public.empresa_inativar(uuid, date, text, text) from public, anon;
+revoke all on function public.empresa_reativar(uuid, date, text) from public, anon;
+grant execute on function public.empresa_inativar(uuid, date, text, text) to authenticated;
+grant execute on function public.empresa_reativar(uuid, date, text) to authenticated;
+
+-- ---------------------------------------------------------------------
+-- Documentos da empresa
+-- ---------------------------------------------------------------------
+create table if not exists public.empresa_documentos (
+  id               uuid primary key default gen_random_uuid(),
+  empresa_id       uuid not null references public.legalizacao_empresas (id) on delete cascade,
+  movimentacao_id  uuid references public.empresa_movimentacoes (id) on delete set null,
+  nome             text not null,
+  caminho          text not null unique,
+  tipo             text,
+  tamanho          bigint,
+  categoria        text,
+  enviado_por      uuid references public.profiles (id) on delete set null default auth.uid(),
+  enviado_por_nome text,
+  created_at       timestamptz not null default now(),
+  constraint empresa_documentos_nome check (length(btrim(nome)) between 1 and 200)
+);
+
+create index if not exists empresa_documentos_empresa_idx on public.empresa_documentos (empresa_id, created_at desc);
+
+alter table public.empresa_documentos enable row level security;
+
+do $$
+begin
+  if not exists (select 1 from pg_policies where tablename = 'empresa_documentos' and policyname = 'empresa_documentos_select') then
+    create policy empresa_documentos_select on public.empresa_documentos
+      for select to authenticated using (public.can_read_legalizacao());
+    create policy empresa_documentos_insert on public.empresa_documentos
+      for insert to authenticated with check (public.can_write_legalizacao() and enviado_por = (select auth.uid()));
+    create policy empresa_documentos_delete on public.empresa_documentos
+      for delete to authenticated using (public.is_admin() or (enviado_por = (select auth.uid()) and public.can_write_legalizacao()));
+  end if;
+end $$;
+
+create or replace trigger trg_audit_empresa_documentos
+  after insert or delete on public.empresa_documentos
+  for each row execute function public.registrar_auditoria();
+
+-- ---------------------------------------------------------------------
+-- Validades na agenda central
+-- ---------------------------------------------------------------------
+create or replace function public.agenda_sinc_empresa(e public.legalizacao_empresas)
+returns void
+language plpgsql security definer
+set search_path = ''
+as $$
+declare
+  d record;
+begin
+  for d in
+    select * from (values
+      ('avcb', 'AVCB / CLCB', e.avcb_clcb_validade, 'Estadual'),
+      ('visa', 'Vigilância Sanitária', e.vigilancia_sanitaria_validade, 'Municipal'),
+      ('rt', 'Responsável técnico', e.validade_data, 'Outro')
+    ) as x(chave, documento, validade, categoria)
+  loop
+    perform public.agenda_publicar(
+      p_modulo => 'documentos', p_tabela => 'legalizacao_empresas', p_id => e.id::text, p_chave => d.chave,
+      p_titulo => 'Vence ' || d.documento || ' — ' || e.razao_social,
+      p_data => case when e.situacao = 'ativa' then d.validade end,
+      p_responsaveis => array[e.responsavel_id],
+      p_link => '/legalizacao?empresa=' || e.id, p_permissao => 'tela.legalizacao',
+      p_descricao => 'Validade do documento. Abra um processo de renovação no Controle Legalização.',
+      p_departamento => 'Legalização', p_categoria => d.categoria,
+      p_empresa_id => e.id, p_empresa => e.razao_social,
+      p_avisar => false, p_status_na_origem => false);
+  end loop;
+end;
+$$;
+
+create or replace function public.agenda_gatilho_empresa()
+returns trigger
+language plpgsql security definer
+set search_path = ''
+as $$
+begin
+  if tg_op = 'DELETE' then
+    perform public.agenda_remover('legalizacao_empresas', old.id::text, null);
+    return old;
+  end if;
+  if tg_op = 'INSERT'
+     or new.avcb_clcb_validade is distinct from old.avcb_clcb_validade
+     or new.vigilancia_sanitaria_validade is distinct from old.vigilancia_sanitaria_validade
+     or new.validade_data is distinct from old.validade_data
+     or new.situacao is distinct from old.situacao
+     or new.razao_social is distinct from old.razao_social
+     or new.responsavel_id is distinct from old.responsavel_id then
+    perform public.agenda_sinc_empresa(new);
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public.agenda_sinc_empresa(public.legalizacao_empresas) from public, anon, authenticated;
+revoke all on function public.agenda_gatilho_empresa() from public, anon, authenticated;
+
+create or replace trigger trg_agenda_empresas
+  after insert or update or delete on public.legalizacao_empresas
+  for each row execute function public.agenda_gatilho_empresa();
+
+select public.agenda_sinc_empresa(e) from public.legalizacao_empresas e
+where e.avcb_clcb_validade is not null or e.vigilancia_sanitaria_validade is not null or e.validade_data is not null;
+
+
+-- ---------------------------------------------------------------------
+-- 0027_tarefas.sql
+-- ---------------------------------------------------------------------
+
+-- =====================================================================
+-- PortalMPC — 0027 — Tarefas e lembretes (Kanban)
+-- ---------------------------------------------------------------------
+-- Quadro com as colunas A fazer · Em andamento · Em revisão · Concluído ·
+-- Cancelado. Cada tarefa pode ter vários responsáveis, prioridade, prazo
+-- (data e hora), checklist, comentários, anexos e histórico.
+-- Tarefa com prazo entra sozinha na agenda central (0025): aparece no
+-- calendário de cada responsável e gera os avisos de atribuição e de prazo.
+-- =====================================================================
+
+create table if not exists public.tarefas (
+  id              uuid primary key default gen_random_uuid(),
+  titulo          text not null,
+  descricao       text not null default '',
+  tipo            text not null default 'tarefa',
+  status          text not null default 'a_fazer',
+  prioridade      text not null default 'normal',
+  categoria       text,
+  vencimento      date,
+  hora            time,
+  responsaveis    uuid[] not null default '{}',
+  privada         boolean not null default false,
+  empresa_id      uuid references public.legalizacao_empresas (id) on delete set null,
+  empresa         text,
+  checklist       jsonb not null default '[]'::jsonb,
+  ordem           double precision not null default extract(epoch from now()),
+  criado_por      uuid references public.profiles (id) on delete set null default auth.uid(),
+  criado_por_nome text,
+  concluida_em    timestamptz,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  constraint tarefas_titulo check (length(btrim(titulo)) between 1 and 160),
+  constraint tarefas_tipo check (tipo in ('tarefa', 'lembrete')),
+  constraint tarefas_status check (status in ('a_fazer', 'em_andamento', 'em_revisao', 'concluido', 'cancelado')),
+  constraint tarefas_prioridade check (prioridade in ('baixa', 'normal', 'alta', 'urgente')),
+  constraint tarefas_checklist check (jsonb_typeof(checklist) = 'array')
+);
+
+create index if not exists tarefas_status_idx on public.tarefas (status, ordem);
+create index if not exists tarefas_responsaveis_idx on public.tarefas using gin (responsaveis);
+create index if not exists tarefas_vencimento_idx on public.tarefas (vencimento);
+
+create table if not exists public.tarefa_comentarios (
+  id          uuid primary key default gen_random_uuid(),
+  tarefa_id   uuid not null references public.tarefas (id) on delete cascade,
+  autor_id    uuid references public.profiles (id) on delete set null default auth.uid(),
+  autor_nome  text,
+  texto       text not null,
+  created_at  timestamptz not null default now(),
+  constraint tarefa_comentarios_texto check (length(btrim(texto)) between 1 and 4000)
+);
+
+create table if not exists public.tarefa_anexos (
+  id           uuid primary key default gen_random_uuid(),
+  tarefa_id    uuid not null references public.tarefas (id) on delete cascade,
+  nome         text not null,
+  caminho      text not null unique,
+  tipo         text,
+  tamanho      bigint,
+  enviado_por  uuid references public.profiles (id) on delete set null default auth.uid(),
+  enviado_por_nome text,
+  created_at   timestamptz not null default now()
+);
+
+create table if not exists public.tarefa_historico (
+  id          uuid primary key default gen_random_uuid(),
+  tarefa_id   uuid not null references public.tarefas (id) on delete cascade,
+  autor_id    uuid references public.profiles (id) on delete set null,
+  autor_nome  text,
+  acao        text not null,
+  de          text,
+  para        text,
+  created_at  timestamptz not null default now()
+);
+
+create index if not exists tarefa_comentarios_tarefa_idx on public.tarefa_comentarios (tarefa_id, created_at);
+create index if not exists tarefa_anexos_tarefa_idx on public.tarefa_anexos (tarefa_id);
+create index if not exists tarefa_historico_tarefa_idx on public.tarefa_historico (tarefa_id, created_at);
+
+-- ---------------------------------------------------------------------
+-- Acesso
+-- ---------------------------------------------------------------------
+create or replace function public.tarefa_pode_ver(p_tarefa uuid)
+returns boolean
+language sql stable security definer set search_path = ''
+as $$
+  select public.is_active() and exists (
+    select 1 from public.tarefas t
+    where t.id = p_tarefa
+      and ((select auth.uid()) = any (t.responsaveis) or t.criado_por = (select auth.uid())
+           or (not t.privada and public.tem_permissao('tela.tarefas')))
+  );
+$$;
+
+create or replace function public.tarefa_pode_editar(p_tarefa uuid)
+returns boolean
+language sql stable security definer set search_path = ''
+as $$
+  select public.tem_permissao('tela.tarefas') and exists (
+    select 1 from public.tarefas t
+    where t.id = p_tarefa
+      and ((select auth.uid()) = any (t.responsaveis) or t.criado_por = (select auth.uid())
+           or (not t.privada and public.tem_permissao('dados.tarefas.gerenciar')))
+  );
+$$;
+
+revoke all on function public.tarefa_pode_ver(uuid) from public, anon;
+revoke all on function public.tarefa_pode_editar(uuid) from public, anon;
+grant execute on function public.tarefa_pode_ver(uuid) to authenticated;
+grant execute on function public.tarefa_pode_editar(uuid) to authenticated;
+
+alter table public.tarefas            enable row level security;
+alter table public.tarefa_comentarios enable row level security;
+alter table public.tarefa_anexos      enable row level security;
+alter table public.tarefa_historico   enable row level security;
+
+do $$
+begin
+  if not exists (select 1 from pg_policies where tablename = 'tarefas' and policyname = 'tarefas_select') then
+    create policy tarefas_select on public.tarefas for select to authenticated
+      using (public.is_active() and ((select auth.uid()) = any (responsaveis) or criado_por = (select auth.uid())
+             or (not privada and public.tem_permissao('tela.tarefas'))));
+    create policy tarefas_insert on public.tarefas for insert to authenticated
+      with check (public.tem_permissao('tela.tarefas') and criado_por = (select auth.uid()));
+    create policy tarefas_update on public.tarefas for update to authenticated
+      using (public.tem_permissao('tela.tarefas') and ((select auth.uid()) = any (responsaveis) or criado_por = (select auth.uid())
+             or (not privada and public.tem_permissao('dados.tarefas.gerenciar'))))
+      with check (public.tem_permissao('tela.tarefas'));
+    create policy tarefas_delete on public.tarefas for delete to authenticated
+      using (public.tem_permissao('tela.tarefas') and (criado_por = (select auth.uid())
+             or (not privada and public.tem_permissao('dados.tarefas.gerenciar'))));
+
+    create policy tarefa_comentarios_select on public.tarefa_comentarios for select to authenticated
+      using (public.tarefa_pode_ver(tarefa_id));
+    create policy tarefa_comentarios_insert on public.tarefa_comentarios for insert to authenticated
+      with check (public.tarefa_pode_ver(tarefa_id) and autor_id = (select auth.uid()));
+    create policy tarefa_comentarios_delete on public.tarefa_comentarios for delete to authenticated
+      using (autor_id = (select auth.uid()) or public.tem_permissao('dados.tarefas.gerenciar'));
+
+    create policy tarefa_anexos_select on public.tarefa_anexos for select to authenticated
+      using (public.tarefa_pode_ver(tarefa_id));
+    create policy tarefa_anexos_insert on public.tarefa_anexos for insert to authenticated
+      with check (public.tarefa_pode_ver(tarefa_id) and enviado_por = (select auth.uid()));
+    create policy tarefa_anexos_delete on public.tarefa_anexos for delete to authenticated
+      using (enviado_por = (select auth.uid()) or public.tem_permissao('dados.tarefas.gerenciar'));
+
+    -- O histórico é escrito só pelos gatilhos.
+    create policy tarefa_historico_select on public.tarefa_historico for select to authenticated
+      using (public.tarefa_pode_ver(tarefa_id));
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------
+-- Carimbos, histórico, agenda e avisos
+-- ---------------------------------------------------------------------
+create or replace function public.tarefa_rotulo_status(p text)
+returns text language sql immutable set search_path = ''
+as $$
+  select case p when 'a_fazer' then 'A fazer' when 'em_andamento' then 'Em andamento' when 'em_revisao' then 'Em revisão'
+                when 'concluido' then 'Concluído' when 'cancelado' then 'Cancelado' else p end;
+$$;
+
+create or replace function public.tarefa_carimbo()
+returns trigger
+language plpgsql set search_path = ''
+as $$
+begin
+  new.titulo := btrim(new.titulo);
+  new.responsaveis := coalesce(array(select distinct x from unnest(new.responsaveis) x where x is not null), '{}');
+  if tg_op = 'INSERT' then
+    if (select auth.uid()) is not null then new.criado_por := (select auth.uid()); end if;
+    new.criado_por_nome := (select nome from public.profiles where id = new.criado_por);
+  else
+    new.criado_por := old.criado_por;
+    new.criado_por_nome := old.criado_por_nome;
+    new.created_at := old.created_at;
+    new.updated_at := now();
+  end if;
+  if new.status = 'concluido' then
+    new.concluida_em := coalesce(case when tg_op = 'UPDATE' and old.status = 'concluido' then old.concluida_em end, now());
+  else
+    new.concluida_em := null;
+  end if;
+  if new.vencimento is null then new.hora := null; end if;
+  return new;
+end;
+$$;
+
+create or replace function public.tarefa_depois()
+returns trigger
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_uid uuid := (select auth.uid());
+  v_nome text := (select nome from public.profiles where id = (select auth.uid()));
+  p uuid;
+begin
+  if tg_op = 'DELETE' then
+    perform public.agenda_remover('tarefas', old.id::text, null);
+    return old;
+  end if;
+
+  -- Histórico
+  if tg_op = 'INSERT' then
+    insert into public.tarefa_historico (tarefa_id, autor_id, autor_nome, acao, para)
+    values (new.id, v_uid, v_nome, 'criou', public.tarefa_rotulo_status(new.status));
+  else
+    if new.status is distinct from old.status then
+      insert into public.tarefa_historico (tarefa_id, autor_id, autor_nome, acao, de, para)
+      values (new.id, v_uid, v_nome, 'moveu', public.tarefa_rotulo_status(old.status), public.tarefa_rotulo_status(new.status));
+    end if;
+    if new.responsaveis is distinct from old.responsaveis then
+      insert into public.tarefa_historico (tarefa_id, autor_id, autor_nome, acao, de, para)
+      values (new.id, v_uid, v_nome, 'responsáveis',
+              (select string_agg(nome, ', ' order by nome) from public.profiles where id = any (old.responsaveis)),
+              (select string_agg(nome, ', ' order by nome) from public.profiles where id = any (new.responsaveis)));
+    end if;
+    if new.vencimento is distinct from old.vencimento or new.hora is distinct from old.hora then
+      insert into public.tarefa_historico (tarefa_id, autor_id, autor_nome, acao, de, para)
+      values (new.id, v_uid, v_nome, 'prazo',
+              to_char(old.vencimento, 'DD/MM/YYYY') || coalesce(' ' || to_char(old.hora, 'HH24:MI'), ''),
+              to_char(new.vencimento, 'DD/MM/YYYY') || coalesce(' ' || to_char(new.hora, 'HH24:MI'), ''));
+    end if;
+    if new.prioridade is distinct from old.prioridade then
+      insert into public.tarefa_historico (tarefa_id, autor_id, autor_nome, acao, de, para)
+      values (new.id, v_uid, v_nome, 'prioridade', old.prioridade, new.prioridade);
+    end if;
+    if new.titulo is distinct from old.titulo then
+      insert into public.tarefa_historico (tarefa_id, autor_id, autor_nome, acao, de, para)
+      values (new.id, v_uid, v_nome, 'título', old.titulo, new.titulo);
+    end if;
+    if new.descricao is distinct from old.descricao then
+      insert into public.tarefa_historico (tarefa_id, autor_id, autor_nome, acao) values (new.id, v_uid, v_nome, 'descrição');
+    end if;
+  end if;
+
+  -- Agenda central: com prazo, entra no calendário de cada responsável.
+  perform public.agenda_publicar(
+    p_modulo => 'tarefas', p_tabela => 'tarefas', p_id => new.id::text,
+    p_titulo => case when new.tipo = 'lembrete' then 'Lembrete: ' else '' end || new.titulo,
+    p_data => new.vencimento, p_hora => new.hora,
+    p_responsaveis => case when cardinality(new.responsaveis) = 0 then array[new.criado_por] else new.responsaveis end,
+    p_status => case new.status when 'concluido' then 'concluido' when 'cancelado' then 'cancelado' else 'pendente' end,
+    p_link => '/tarefas?tarefa=' || new.id, p_permissao => 'tela.tarefas',
+    p_descricao => concat_ws(' · ', 'Prioridade ' || new.prioridade, public.tarefa_rotulo_status(new.status), nullif(left(new.descricao, 300), '')),
+    p_categoria => 'Interna', p_empresa_id => new.empresa_id, p_empresa => new.empresa,
+    p_privado => new.privada);
+
+  -- Sem prazo não há evento: o aviso de atribuição sai daqui.
+  if new.vencimento is null and new.status not in ('concluido', 'cancelado') then
+    foreach p in array new.responsaveis loop
+      if tg_op = 'INSERT' or not (p = any (old.responsaveis)) then
+        perform public.notificar(p, 'atribuicao', 'tarefa_atribuida',
+          'Tarefa no seu nome: ' || new.titulo, coalesce(v_nome, 'O portal') || ' atribuiu a você (sem prazo definido).',
+          '/tarefas?tarefa=' || new.id, case when new.prioridade in ('alta', 'urgente') then 'alta' else 'normal' end,
+          v_uid, 'tarefas', new.id::text, null, 'tarefa:atribuida:' || new.id, '{}'::jsonb, true);
+      end if;
+    end loop;
+  end if;
+  return new;
+end;
+$$;
+
+create or replace function public.tarefa_filho_carimbo()
+returns trigger
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_uid uuid := (select auth.uid());
+  v_nome text := (select nome from public.profiles where id = (select auth.uid()));
+  t public.tarefas;
+  p uuid;
+begin
+  select * into t from public.tarefas where id = new.tarefa_id;
+  if tg_table_name = 'tarefa_comentarios' then
+    new.autor_id := coalesce(v_uid, new.autor_id);
+    new.autor_nome := coalesce(v_nome, new.autor_nome);
+    foreach p in array (t.responsaveis || t.criado_por) loop
+      perform public.notificar(p, 'atribuicao', 'tarefa_comentario',
+        'Novo comentário: ' || t.titulo, coalesce(v_nome, 'Alguém') || ': ' || left(new.texto, 140),
+        '/tarefas?tarefa=' || t.id, 'normal', v_uid, 'tarefas', t.id::text, null,
+        'tarefa:comentario:' || t.id, '{}'::jsonb, true);
+    end loop;
+  else
+    new.enviado_por := coalesce(v_uid, new.enviado_por);
+    new.enviado_por_nome := coalesce(v_nome, new.enviado_por_nome);
+    insert into public.tarefa_historico (tarefa_id, autor_id, autor_nome, acao, para)
+    values (new.tarefa_id, v_uid, v_nome, 'anexou', new.nome);
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public.tarefa_carimbo() from public, anon, authenticated;
+revoke all on function public.tarefa_depois() from public, anon, authenticated;
+revoke all on function public.tarefa_filho_carimbo() from public, anon, authenticated;
+
+create or replace trigger trg_tarefa_carimbo
+  before insert or update on public.tarefas
+  for each row execute function public.tarefa_carimbo();
+create or replace trigger trg_tarefa_depois
+  after insert or update or delete on public.tarefas
+  for each row execute function public.tarefa_depois();
+create or replace trigger trg_tarefa_comentario_carimbo
+  before insert on public.tarefa_comentarios
+  for each row execute function public.tarefa_filho_carimbo();
+create or replace trigger trg_tarefa_anexo_carimbo
+  before insert on public.tarefa_anexos
+  for each row execute function public.tarefa_filho_carimbo();
+
+-- Quadro em tempo real: o cartão que um colega move aparece movido para todos.
+do $$
+declare v_tabela text;
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    foreach v_tabela in array array['tarefas', 'tarefa_comentarios'] loop
+      if not exists (select 1 from pg_publication_tables
+                     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = v_tabela) then
+        execute format('alter publication supabase_realtime add table public.%I', v_tabela);
+      end if;
+    end loop;
+  end if;
+end $$;
+
+
+-- ---------------------------------------------------------------------
+-- 0028_prospeccao.sql
+-- ---------------------------------------------------------------------
+
+-- =====================================================================
+-- PortalMPC — 0028 — Prospecção (CRM comercial da Meta Plano)
+-- ---------------------------------------------------------------------
+-- Funil configurável (etapas), leads, histórico de contatos, propostas e
+-- próximas ações. Toda ação AGENDADA (reunião, retorno, ligação marcada)
+-- vai para a agenda central e avisa o responsável. Os indicadores do painel
+-- saem de `prospeccao_indicadores()`, calculados sobre os registros reais.
+-- =====================================================================
+
+create table if not exists public.prospeccao_etapas (
+  id     uuid primary key default gen_random_uuid(),
+  nome   text not null,
+  ordem  integer not null default 0,
+  cor    text not null default '#64748b',
+  -- 'aberta' = em andamento · 'ganha' = cliente convertido · 'perdida' = oportunidade perdida
+  tipo   text not null default 'aberta',
+  ativo  boolean not null default true,
+  constraint prospeccao_etapas_nome check (length(btrim(nome)) between 1 and 60),
+  constraint prospeccao_etapas_tipo check (tipo in ('aberta', 'ganha', 'perdida'))
+);
+
+insert into public.prospeccao_etapas (nome, ordem, cor, tipo)
+select v.nome, v.ordem, v.cor, v.tipo
+from (values
+  ('Lead identificado', 1, '#64748b', 'aberta'),
+  ('Primeiro contato realizado', 2, '#2f62c9', 'aberta'),
+  ('Aguardando retorno', 3, '#b7791f', 'aberta'),
+  ('Em negociação', 4, '#7b4fc4', 'aberta'),
+  ('Reunião agendada', 5, '#0e7490', 'aberta'),
+  ('Proposta enviada', 6, '#c2417a', 'aberta'),
+  ('Cliente convertido', 7, '#15803d', 'ganha'),
+  ('Oportunidade perdida', 8, '#b91c1c', 'perdida')
+) as v(nome, ordem, cor, tipo)
+where not exists (select 1 from public.prospeccao_etapas);
+
+create table if not exists public.prospeccao_leads (
+  id               uuid primary key default gen_random_uuid(),
+  empresa          text not null,
+  cnpj             text,
+  segmento         text,
+  contato          text,
+  telefone         text,
+  whatsapp         text,
+  email            text,
+  cidade           text,
+  uf               text,
+  origem           text,
+  responsavel_id   uuid references public.profiles (id) on delete set null,
+  data_entrada     date not null default current_date,
+  observacoes      text not null default '',
+  etapa_id         uuid not null references public.prospeccao_etapas (id),
+  etapa_desde      timestamptz not null default now(),
+  valor_estimado   numeric(12, 2),
+  motivo_perda     text,
+  ultimo_contato_em date,
+  proxima_acao_em  date,
+  convertido_em    timestamptz,
+  perdido_em       timestamptz,
+  -- Empresa da base de Legalização, quando o lead vira cliente.
+  empresa_id       uuid references public.legalizacao_empresas (id) on delete set null,
+  ordem            double precision not null default extract(epoch from now()),
+  criado_por       uuid references public.profiles (id) on delete set null default auth.uid(),
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now(),
+  constraint prospeccao_leads_empresa check (length(btrim(empresa)) between 1 and 160),
+  constraint prospeccao_leads_uf check (uf is null or uf ~ '^[A-Z]{2}$')
+);
+
+create index if not exists prospeccao_leads_etapa_idx on public.prospeccao_leads (etapa_id, ordem);
+create index if not exists prospeccao_leads_responsavel_idx on public.prospeccao_leads (responsavel_id);
+
+create table if not exists public.prospeccao_atividades (
+  id              uuid primary key default gen_random_uuid(),
+  lead_id         uuid not null references public.prospeccao_leads (id) on delete cascade,
+  tipo            text not null default 'nota',
+  descricao       text not null default '',
+  data            date not null default current_date,
+  hora            time,
+  -- agendada = próxima ação marcada (vai para o calendário); concluida = já aconteceu
+  agendada        boolean not null default false,
+  concluida       boolean not null default true,
+  concluida_em    timestamptz,
+  resultado       text,
+  valor           numeric(12, 2),
+  responsavel_id  uuid references public.profiles (id) on delete set null,
+  criado_por      uuid references public.profiles (id) on delete set null default auth.uid(),
+  criado_por_nome text,
+  created_at      timestamptz not null default now(),
+  constraint prospeccao_atividades_tipo check (tipo in ('ligacao', 'whatsapp', 'email', 'reuniao', 'visita', 'proposta', 'nota', 'etapa'))
+);
+
+create index if not exists prospeccao_atividades_lead_idx on public.prospeccao_atividades (lead_id, data desc, created_at desc);
+create index if not exists prospeccao_atividades_pendentes_idx on public.prospeccao_atividades (data) where not concluida;
+
+alter table public.prospeccao_etapas     enable row level security;
+alter table public.prospeccao_leads      enable row level security;
+alter table public.prospeccao_atividades enable row level security;
+
+do $$
+begin
+  if not exists (select 1 from pg_policies where tablename = 'prospeccao_leads' and policyname = 'prospeccao_leads_select') then
+    create policy prospeccao_etapas_select on public.prospeccao_etapas for select to authenticated
+      using (public.tem_permissao('tela.prospeccao'));
+    -- "As etapas deverão ser configuráveis por administradores."
+    create policy prospeccao_etapas_escrita on public.prospeccao_etapas for all to authenticated
+      using (public.is_admin()) with check (public.is_admin());
+
+    create policy prospeccao_leads_select on public.prospeccao_leads for select to authenticated
+      using (public.tem_permissao('tela.prospeccao'));
+    create policy prospeccao_leads_insert on public.prospeccao_leads for insert to authenticated
+      with check (public.tem_permissao('dados.prospeccao.editar'));
+    create policy prospeccao_leads_update on public.prospeccao_leads for update to authenticated
+      using (public.tem_permissao('dados.prospeccao.editar')) with check (public.tem_permissao('dados.prospeccao.editar'));
+    create policy prospeccao_leads_delete on public.prospeccao_leads for delete to authenticated
+      using (public.tem_permissao('dados.prospeccao.excluir'));
+
+    create policy prospeccao_atividades_select on public.prospeccao_atividades for select to authenticated
+      using (public.tem_permissao('tela.prospeccao'));
+    create policy prospeccao_atividades_insert on public.prospeccao_atividades for insert to authenticated
+      with check (public.tem_permissao('dados.prospeccao.editar'));
+    create policy prospeccao_atividades_update on public.prospeccao_atividades for update to authenticated
+      using (public.tem_permissao('dados.prospeccao.editar')) with check (public.tem_permissao('dados.prospeccao.editar'));
+    create policy prospeccao_atividades_delete on public.prospeccao_atividades for delete to authenticated
+      using (public.tem_permissao('dados.prospeccao.editar') and (criado_por = (select auth.uid()) or public.tem_permissao('dados.prospeccao.excluir')));
+  end if;
+end $$;
+
+create or replace function public.prospeccao_rotulo_tipo(p text)
+returns text language sql immutable set search_path = ''
+as $$
+  select case p when 'ligacao' then 'Ligação' when 'whatsapp' then 'WhatsApp' when 'email' then 'E-mail'
+                when 'reuniao' then 'Reunião' when 'visita' then 'Visita' when 'proposta' then 'Proposta'
+                when 'etapa' then 'Mudança de etapa' else 'Anotação' end;
+$$;
+
+create or replace function public.prospeccao_lead_carimbo()
+returns trigger
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_tipo text;
+begin
+  new.empresa := btrim(new.empresa);
+  new.cnpj := nullif(regexp_replace(coalesce(new.cnpj, ''), '\D', '', 'g'), '');
+  new.uf := nullif(upper(btrim(coalesce(new.uf, ''))), '');
+  if tg_op = 'UPDATE' then
+    new.created_at := old.created_at;
+    new.criado_por := old.criado_por;
+    new.updated_at := now();
+  end if;
+  if tg_op = 'INSERT' or new.etapa_id is distinct from old.etapa_id then
+    select tipo into v_tipo from public.prospeccao_etapas where id = new.etapa_id;
+    new.etapa_desde := now();
+    new.convertido_em := case when v_tipo = 'ganha' then coalesce(new.convertido_em, now()) end;
+    new.perdido_em := case when v_tipo = 'perdida' then coalesce(new.perdido_em, now()) end;
+    if v_tipo <> 'perdida' then new.motivo_perda := null; end if;
+  end if;
+  return new;
+end;
+$$;
+
+create or replace function public.prospeccao_lead_depois()
+returns trigger
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_nome text := (select nome from public.profiles where id = (select auth.uid()));
+begin
+  if tg_op = 'INSERT' then
+    insert into public.prospeccao_atividades (lead_id, tipo, descricao, data, concluida, responsavel_id, criado_por_nome)
+    values (new.id, 'etapa', 'Lead cadastrado em "' || (select nome from public.prospeccao_etapas where id = new.etapa_id) || '".',
+            new.data_entrada, true, new.responsavel_id, v_nome);
+  elsif new.etapa_id is distinct from old.etapa_id then
+    insert into public.prospeccao_atividades (lead_id, tipo, descricao, data, concluida, responsavel_id, criado_por_nome, resultado)
+    values (new.id, 'etapa',
+            'De "' || (select nome from public.prospeccao_etapas where id = old.etapa_id) || '" para "' ||
+            (select nome from public.prospeccao_etapas where id = new.etapa_id) || '".',
+            public.hoje_brasil(), true, new.responsavel_id, v_nome, new.motivo_perda);
+  end if;
+  -- Trocar o responsável leva junto as ações que ainda vão acontecer.
+  if tg_op = 'UPDATE' and new.responsavel_id is distinct from old.responsavel_id then
+    update public.prospeccao_atividades set responsavel_id = new.responsavel_id
+     where lead_id = new.id and not concluida and responsavel_id is not distinct from old.responsavel_id;
+  end if;
+  if tg_op = 'UPDATE' and new.empresa is distinct from old.empresa then
+    update public.prospeccao_atividades set descricao = descricao where lead_id = new.id and agendada and not concluida;
+  end if;
+  return new;
+end;
+$$;
+
+create or replace function public.prospeccao_atividade_carimbo()
+returns trigger
+language plpgsql set search_path = ''
+as $$
+begin
+  if tg_op = 'INSERT' then
+    if (select auth.uid()) is not null then new.criado_por := (select auth.uid()); end if;
+    new.criado_por_nome := coalesce((select nome from public.profiles where id = new.criado_por), new.criado_por_nome);
+  end if;
+  if new.concluida then
+    new.concluida_em := coalesce(new.concluida_em, now());
+  else
+    new.concluida_em := null;
+  end if;
+  return new;
+end;
+$$;
+
+create or replace function public.prospeccao_atividade_depois()
+returns trigger
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_lead uuid := coalesce(new.lead_id, old.lead_id);
+  l public.prospeccao_leads;
+begin
+  if tg_op = 'DELETE' then
+    perform public.agenda_remover('prospeccao_atividades', old.id::text, null);
+  end if;
+
+  update public.prospeccao_leads x
+     set ultimo_contato_em = (select max(a.data) from public.prospeccao_atividades a
+                              where a.lead_id = v_lead and a.concluida and a.tipo not in ('nota', 'etapa')),
+         proxima_acao_em = (select min(a.data) from public.prospeccao_atividades a
+                            where a.lead_id = v_lead and not a.concluida)
+   where x.id = v_lead;
+
+  if tg_op <> 'DELETE' then
+    select * into l from public.prospeccao_leads where id = new.lead_id;
+    perform public.agenda_publicar(
+      p_modulo => 'prospeccao', p_tabela => 'prospeccao_atividades', p_id => new.id::text,
+      p_titulo => public.prospeccao_rotulo_tipo(new.tipo) || ' — ' || l.empresa,
+      p_data => case when new.agendada then new.data end, p_hora => new.hora,
+      p_responsaveis => array[coalesce(new.responsavel_id, l.responsavel_id)],
+      p_status => case when new.concluida then 'concluido' else 'pendente' end,
+      p_link => '/prospeccao?lead=' || new.lead_id, p_permissao => 'tela.prospeccao',
+      p_descricao => concat_ws(' · ', nullif(new.descricao, ''), 'Contato: ' || l.contato, l.telefone),
+      p_departamento => 'Matriz', p_categoria => 'Interna', p_empresa => l.empresa);
+  end if;
+  return coalesce(new, old);
+end;
+$$;
+
+revoke all on function public.prospeccao_lead_carimbo() from public, anon, authenticated;
+revoke all on function public.prospeccao_lead_depois() from public, anon, authenticated;
+revoke all on function public.prospeccao_atividade_carimbo() from public, anon, authenticated;
+revoke all on function public.prospeccao_atividade_depois() from public, anon, authenticated;
+
+create or replace trigger trg_prospeccao_lead_carimbo
+  before insert or update on public.prospeccao_leads
+  for each row execute function public.prospeccao_lead_carimbo();
+create or replace trigger trg_prospeccao_lead_depois
+  after insert or update on public.prospeccao_leads
+  for each row execute function public.prospeccao_lead_depois();
+create or replace trigger trg_prospeccao_atividade_carimbo
+  before insert or update on public.prospeccao_atividades
+  for each row execute function public.prospeccao_atividade_carimbo();
+create or replace trigger trg_prospeccao_atividade_depois
+  after insert or update or delete on public.prospeccao_atividades
+  for each row execute function public.prospeccao_atividade_depois();
+
+create or replace trigger trg_audit_prospeccao_leads
+  after insert or update or delete on public.prospeccao_leads
+  for each row execute function public.registrar_auditoria();
+create or replace trigger trg_audit_prospeccao_etapas
+  after insert or update or delete on public.prospeccao_etapas
+  for each row execute function public.registrar_auditoria();
+
+/** Indicadores do painel comercial — sempre sobre os registros reais. */
+create or replace function public.prospeccao_indicadores(p_inicio date, p_fim date)
+returns jsonb
+language sql stable security definer set search_path = ''
+as $$
+  with leads as (
+    select l.*, e.tipo as etapa_tipo, e.nome as etapa_nome
+    from public.prospeccao_leads l join public.prospeccao_etapas e on e.id = l.etapa_id
+    where public.tem_permissao('tela.prospeccao')
+  ),
+  periodo as (
+    select
+      count(*) filter (where data_entrada between p_inicio and p_fim) as novos,
+      count(*) filter (where etapa_tipo = 'ganha' and convertido_em::date between p_inicio and p_fim) as convertidos,
+      count(*) filter (where etapa_tipo = 'perdida' and perdido_em::date between p_inicio and p_fim) as perdidos,
+      coalesce(sum(valor_estimado) filter (where etapa_tipo = 'ganha' and convertido_em::date between p_inicio and p_fim), 0) as valor_ganho
+    from leads
+  )
+  select jsonb_build_object(
+    'total', (select count(*) from leads),
+    'em_aberto', (select count(*) from leads where etapa_tipo = 'aberta'),
+    'novos', (select novos from periodo),
+    'convertidos', (select convertidos from periodo),
+    'perdidos', (select perdidos from periodo),
+    'valor_ganho', (select valor_ganho from periodo),
+    'valor_em_aberto', (select coalesce(sum(valor_estimado), 0) from leads where etapa_tipo = 'aberta'),
+    'taxa_conversao', (select case when convertidos + perdidos > 0 then round(convertidos * 100.0 / (convertidos + perdidos), 1) end from periodo),
+    'funil', (select coalesce(jsonb_agg(jsonb_build_object('etapa_id', e.id, 'nome', e.nome, 'cor', e.cor, 'tipo', e.tipo,
+                 'total', (select count(*) from leads l where l.etapa_id = e.id),
+                 'valor', (select coalesce(sum(l.valor_estimado), 0) from leads l where l.etapa_id = e.id)) order by e.ordem), '[]'::jsonb)
+              from public.prospeccao_etapas e where e.ativo and public.tem_permissao('tela.prospeccao')),
+    'por_responsavel', (select coalesce(jsonb_agg(x order by x ->> 'nome'), '[]'::jsonb) from (
+        select jsonb_build_object('id', l.responsavel_id, 'nome', coalesce(p.nome, 'Sem responsável'),
+                 'leads', count(*), 'em_aberto', count(*) filter (where l.etapa_tipo = 'aberta'),
+                 'convertidos', count(*) filter (where l.etapa_tipo = 'ganha' and l.convertido_em::date between p_inicio and p_fim),
+                 'perdidos', count(*) filter (where l.etapa_tipo = 'perdida' and l.perdido_em::date between p_inicio and p_fim)) as x
+        from leads l left join public.profiles p on p.id = l.responsavel_id
+        group by l.responsavel_id, p.nome) s),
+    'por_origem', (select coalesce(jsonb_agg(jsonb_build_object('rotulo', o.origem, 'total', o.total, 'convertidos', o.convertidos) order by o.total desc), '[]'::jsonb) from (
+        select coalesce(nullif(origem, ''), 'Não informada') as origem, count(*) as total,
+               count(*) filter (where etapa_tipo = 'ganha') as convertidos
+        from leads group by 1) o),
+    'por_mes', (select coalesce(jsonb_agg(jsonb_build_object('mes', to_char(m, 'YYYY-MM'),
+                 'novos', (select count(*) from leads l where date_trunc('month', l.data_entrada) = m),
+                 'convertidos', (select count(*) from leads l where l.etapa_tipo = 'ganha' and date_trunc('month', l.convertido_em) = m),
+                 'perdidos', (select count(*) from leads l where l.etapa_tipo = 'perdida' and date_trunc('month', l.perdido_em) = m)) order by m), '[]'::jsonb)
+               from generate_series(date_trunc('month', public.hoje_brasil()) - interval '5 months', date_trunc('month', public.hoje_brasil()), interval '1 month') m),
+    'motivos_perda', (select coalesce(jsonb_agg(jsonb_build_object('rotulo', x.motivo, 'total', x.total) order by x.total desc), '[]'::jsonb) from (
+        select coalesce(nullif(motivo_perda, ''), 'Não informado') as motivo, count(*) as total
+        from leads where etapa_tipo = 'perdida' group by 1) x),
+    'pendentes', (select count(*) from public.prospeccao_atividades a join leads l on l.id = a.lead_id where not a.concluida),
+    'atrasadas', (select count(*) from public.prospeccao_atividades a join leads l on l.id = a.lead_id where not a.concluida and a.data < public.hoje_brasil()),
+    'sem_proxima_acao', (select count(*) from leads where etapa_tipo = 'aberta' and proxima_acao_em is null),
+    'proximos', (select coalesce(jsonb_agg(x), '[]'::jsonb) from (
+        select jsonb_build_object('id', a.id, 'lead_id', a.lead_id, 'empresa', l.empresa, 'tipo', a.tipo, 'descricao', a.descricao,
+                 'data', a.data, 'hora', a.hora, 'responsavel', p.nome) as x
+        from public.prospeccao_atividades a join leads l on l.id = a.lead_id
+        left join public.profiles p on p.id = coalesce(a.responsavel_id, l.responsavel_id)
+        where not a.concluida order by a.data, a.hora nulls last limit 12) s)
+  );
+$$;
+
+revoke all on function public.prospeccao_rotulo_tipo(text) from public, anon;
+revoke all on function public.prospeccao_indicadores(date, date) from public, anon;
+grant execute on function public.prospeccao_rotulo_tipo(text) to authenticated;
+grant execute on function public.prospeccao_indicadores(date, date) to authenticated;
+
+do $$
+declare v_tabela text;
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    foreach v_tabela in array array['prospeccao_leads'] loop
+      if not exists (select 1 from pg_publication_tables
+                     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = v_tabela) then
+        execute format('alter publication supabase_realtime add table public.%I', v_tabela);
+      end if;
+    end loop;
+  end if;
+end $$;
+
+
+-- ---------------------------------------------------------------------
+-- 0029_chat.sql
+-- ---------------------------------------------------------------------
+
+-- =====================================================================
+-- PortalMPC — 0029 — Chat interno (conversas individuais e em grupo)
+-- ---------------------------------------------------------------------
+-- Mensagens e arquivos ficam no banco e no Storage privado: o histórico não
+-- depende do navegador e não tem limite de quantidade. Só participa quem está
+-- na conversa — a RLS checa isso em cada leitura, inclusive no tempo real.
+-- Conversas nascem e mudam por funções (abrir direta, criar grupo, grupo do
+-- departamento, entrar/sair), nunca por INSERT direto do navegador.
+-- =====================================================================
+
+create table if not exists public.chat_conversas (
+  id                    uuid primary key default gen_random_uuid(),
+  tipo                  text not null,
+  nome                  text,
+  departamento          text,
+  -- Par de usuários da conversa direta (menor:maior), para nunca haver duas.
+  direta_chave          text unique,
+  criado_por            uuid references public.profiles (id) on delete set null,
+  created_at            timestamptz not null default now(),
+  ultima_mensagem_em    timestamptz not null default now(),
+  ultima_mensagem_resumo text,
+  ultima_mensagem_autor uuid references public.profiles (id) on delete set null,
+  constraint chat_conversas_tipo check (tipo in ('direta', 'grupo')),
+  constraint chat_conversas_nome check (tipo = 'direta' or length(btrim(coalesce(nome, ''))) between 1 and 80)
+);
+
+create unique index if not exists chat_conversas_departamento_uidx
+  on public.chat_conversas (departamento) where departamento is not null;
+
+create table if not exists public.chat_participantes (
+  conversa_id       uuid not null references public.chat_conversas (id) on delete cascade,
+  usuario_id        uuid not null references public.profiles (id) on delete cascade,
+  papel             text not null default 'membro',
+  ultima_leitura_em timestamptz not null default now(),
+  entrou_em         timestamptz not null default now(),
+  -- Saiu ou foi removido do grupo: a linha fica (o histórico é preservado).
+  saiu_em           timestamptz,
+  primary key (conversa_id, usuario_id),
+  constraint chat_participantes_papel check (papel in ('admin', 'membro'))
+);
+
+create index if not exists chat_participantes_usuario_idx on public.chat_participantes (usuario_id);
+
+create table if not exists public.chat_mensagens (
+  id          uuid primary key default gen_random_uuid(),
+  conversa_id uuid not null references public.chat_conversas (id) on delete cascade,
+  autor_id    uuid references public.profiles (id) on delete set null default auth.uid(),
+  texto       text not null default '',
+  -- [{ caminho, nome, tipo, tamanho }]
+  anexos      jsonb not null default '[]'::jsonb,
+  resposta_a  uuid references public.chat_mensagens (id) on delete set null,
+  editada_em  timestamptz,
+  excluida_em timestamptz,
+  created_at  timestamptz not null default now(),
+  constraint chat_mensagens_conteudo check (length(texto) <= 8000 and jsonb_typeof(anexos) = 'array'
+                                             and (length(btrim(texto)) > 0 or jsonb_array_length(anexos) > 0 or excluida_em is not null))
+);
+
+create index if not exists chat_mensagens_conversa_idx on public.chat_mensagens (conversa_id, created_at desc);
+
+create or replace function public.chat_participa(p_conversa uuid)
+returns boolean
+language sql stable security definer set search_path = ''
+as $$
+  select public.is_active() and exists (
+    select 1 from public.chat_participantes p
+    where p.conversa_id = p_conversa and p.usuario_id = (select auth.uid()) and p.saiu_em is null);
+$$;
+
+revoke all on function public.chat_participa(uuid) from public, anon;
+grant execute on function public.chat_participa(uuid) to authenticated;
+
+alter table public.chat_conversas     enable row level security;
+alter table public.chat_participantes enable row level security;
+alter table public.chat_mensagens     enable row level security;
+
+do $$
+begin
+  if not exists (select 1 from pg_policies where tablename = 'chat_mensagens' and policyname = 'chat_mensagens_select') then
+    create policy chat_conversas_select on public.chat_conversas for select to authenticated
+      using (public.chat_participa(id));
+    create policy chat_participantes_select on public.chat_participantes for select to authenticated
+      using (public.chat_participa(conversa_id));
+    -- A pessoa só mexe na própria linha (marcar como lida).
+    create policy chat_participantes_update on public.chat_participantes for update to authenticated
+      using (usuario_id = (select auth.uid())) with check (usuario_id = (select auth.uid()));
+
+    create policy chat_mensagens_select on public.chat_mensagens for select to authenticated
+      using (public.chat_participa(conversa_id));
+    create policy chat_mensagens_insert on public.chat_mensagens for insert to authenticated
+      with check (public.tem_permissao('tela.chat') and autor_id = (select auth.uid()) and public.chat_participa(conversa_id));
+    create policy chat_mensagens_update on public.chat_mensagens for update to authenticated
+      using (autor_id = (select auth.uid()) and public.chat_participa(conversa_id))
+      with check (autor_id = (select auth.uid()));
+  end if;
+end $$;
+
+create or replace function public.chat_mensagem_carimbo()
+returns trigger
+language plpgsql security definer set search_path = ''
+as $$
+begin
+  if tg_op = 'INSERT' then
+    new.autor_id := coalesce((select auth.uid()), new.autor_id);
+    new.created_at := now();
+    new.editada_em := null;
+    new.excluida_em := null;
+    return new;
+  end if;
+  -- Editar ou apagar a própria mensagem: o resto não muda.
+  new.conversa_id := old.conversa_id;
+  new.autor_id := old.autor_id;
+  new.created_at := old.created_at;
+  new.resposta_a := old.resposta_a;
+  if new.excluida_em is not null and old.excluida_em is null then
+    new.excluida_em := now();
+    new.texto := '';
+    new.anexos := '[]'::jsonb;
+  elsif old.excluida_em is not null then
+    return old;
+  elsif new.texto is distinct from old.texto then
+    new.editada_em := now();
+    new.anexos := old.anexos;
+  end if;
+  return new;
+end;
+$$;
+
+create or replace function public.chat_mensagem_depois()
+returns trigger
+language plpgsql security definer set search_path = ''
+as $$
+begin
+  update public.chat_conversas c
+     set ultima_mensagem_em = new.created_at,
+         ultima_mensagem_autor = new.autor_id,
+         ultima_mensagem_resumo = case
+           when length(btrim(new.texto)) > 0 then left(new.texto, 120)
+           else '📎 ' || coalesce(new.anexos -> 0 ->> 'nome', 'Arquivo') end
+   where c.id = new.conversa_id;
+  update public.chat_participantes
+     set ultima_leitura_em = new.created_at
+   where conversa_id = new.conversa_id and usuario_id = new.autor_id;
+  return null;
+end;
+$$;
+
+revoke all on function public.chat_mensagem_carimbo() from public, anon, authenticated;
+revoke all on function public.chat_mensagem_depois() from public, anon, authenticated;
+
+create or replace trigger trg_chat_mensagem_carimbo
+  before insert or update on public.chat_mensagens
+  for each row execute function public.chat_mensagem_carimbo();
+create or replace trigger trg_chat_mensagem_depois
+  after insert on public.chat_mensagens
+  for each row execute function public.chat_mensagem_depois();
+
+-- ---------------------------------------------------------------------
+-- Funções do chat
+-- ---------------------------------------------------------------------
+create or replace function public.chat_abrir_direta(p_usuario uuid)
+returns uuid
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_uid uuid := (select auth.uid());
+  v_chave text;
+  v_id uuid;
+begin
+  if not public.tem_permissao('tela.chat') then
+    raise exception 'Você não tem acesso ao chat.' using errcode = '42501';
+  end if;
+  if p_usuario is null or p_usuario = v_uid or not exists (select 1 from public.profiles where id = p_usuario and ativo) then
+    raise exception 'Escolha um colega ativo para conversar.' using errcode = '22023';
+  end if;
+  v_chave := least(v_uid::text, p_usuario::text) || ':' || greatest(v_uid::text, p_usuario::text);
+  select id into v_id from public.chat_conversas where direta_chave = v_chave;
+  if v_id is null then
+    insert into public.chat_conversas (tipo, direta_chave, criado_por) values ('direta', v_chave, v_uid)
+    on conflict (direta_chave) do update set direta_chave = excluded.direta_chave
+    returning id into v_id;
+    insert into public.chat_participantes (conversa_id, usuario_id) values (v_id, v_uid), (v_id, p_usuario)
+    on conflict do nothing;
+  end if;
+  return v_id;
+end;
+$$;
+
+create or replace function public.chat_criar_grupo(p_nome text, p_participantes uuid[])
+returns uuid
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_uid uuid := (select auth.uid());
+  v_id uuid;
+begin
+  if not public.tem_permissao('tela.chat') then
+    raise exception 'Você não tem acesso ao chat.' using errcode = '42501';
+  end if;
+  if length(btrim(coalesce(p_nome, ''))) not between 1 and 80 then
+    raise exception 'Dê um nome ao grupo (até 80 caracteres).' using errcode = '22023';
+  end if;
+  insert into public.chat_conversas (tipo, nome, criado_por) values ('grupo', btrim(p_nome), v_uid) returning id into v_id;
+  insert into public.chat_participantes (conversa_id, usuario_id, papel) values (v_id, v_uid, 'admin');
+  insert into public.chat_participantes (conversa_id, usuario_id)
+  select v_id, p.id from public.profiles p
+  where p.id = any (coalesce(p_participantes, '{}')) and p.ativo and p.id <> v_uid
+  on conflict do nothing;
+  return v_id;
+end;
+$$;
+
+/** Grupo do departamento: um por departamento, com todo mundo ativo daquele time. */
+create or replace function public.chat_grupo_departamento(p_departamento text default null)
+returns uuid
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_uid uuid := (select auth.uid());
+  v_dep text := coalesce(p_departamento, public.meu_departamento());
+  v_id uuid;
+begin
+  if not public.tem_permissao('tela.chat') then
+    raise exception 'Você não tem acesso ao chat.' using errcode = '42501';
+  end if;
+  if v_dep is distinct from public.meu_departamento() and not public.is_admin() then
+    raise exception 'Você só pode abrir o grupo do seu departamento.' using errcode = '42501';
+  end if;
+  if v_dep not in ('Matriz', 'Fiscal', 'Departamento Pessoal', 'Contabilidade', 'Legalização', 'Qualidade') then
+    raise exception 'Departamento inválido.' using errcode = '22023';
+  end if;
+  select id into v_id from public.chat_conversas where departamento = v_dep;
+  if v_id is null then
+    insert into public.chat_conversas (tipo, nome, departamento, criado_por)
+    values ('grupo', 'Equipe ' || v_dep, v_dep, v_uid)
+    on conflict (departamento) where departamento is not null do update set nome = excluded.nome
+    returning id into v_id;
+  end if;
+  -- Quem entrou no time depois passa a fazer parte ao abrir o grupo.
+  insert into public.chat_participantes (conversa_id, usuario_id, ultima_leitura_em)
+  select v_id, p.id, now() from public.profiles p
+  where p.ativo and public.departamento_de_area(p.area) = v_dep
+  on conflict do nothing;
+  insert into public.chat_participantes (conversa_id, usuario_id) values (v_id, v_uid) on conflict do nothing;
+  return v_id;
+end;
+$$;
+
+create or replace function public.chat_gerenciar_participante(p_conversa uuid, p_usuario uuid, p_acao text)
+returns void
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_uid uuid := (select auth.uid());
+  c public.chat_conversas;
+  v_admin boolean;
+begin
+  select * into c from public.chat_conversas where id = p_conversa;
+  if not found or c.tipo <> 'grupo' or not public.chat_participa(p_conversa) then
+    raise exception 'Grupo não encontrado.' using errcode = '22023';
+  end if;
+  v_admin := public.is_admin() or c.criado_por = v_uid or exists (
+    select 1 from public.chat_participantes
+    where conversa_id = p_conversa and usuario_id = v_uid and papel = 'admin' and saiu_em is null);
+  if p_acao = 'adicionar' then
+    if not v_admin then
+      raise exception 'Só quem administra o grupo adiciona pessoas.' using errcode = '42501';
+    end if;
+    insert into public.chat_participantes (conversa_id, usuario_id)
+    select p_conversa, p.id from public.profiles p where p.id = p_usuario and p.ativo
+    on conflict (conversa_id, usuario_id) do update set saiu_em = null, ultima_leitura_em = now();
+  elsif p_acao = 'remover' then
+    if p_usuario <> v_uid and not v_admin then
+      raise exception 'Só quem administra o grupo remove pessoas.' using errcode = '42501';
+    end if;
+    update public.chat_participantes set saiu_em = now()
+     where conversa_id = p_conversa and usuario_id = p_usuario and saiu_em is null;
+  else
+    raise exception 'Ação inválida.' using errcode = '22023';
+  end if;
+end;
+$$;
+
+create or replace function public.chat_renomear(p_conversa uuid, p_nome text)
+returns void
+language plpgsql security definer set search_path = ''
+as $$
+begin
+  if not public.chat_participa(p_conversa) or length(btrim(coalesce(p_nome, ''))) not between 1 and 80 then
+    raise exception 'Não foi possível renomear.' using errcode = '22023';
+  end if;
+  update public.chat_conversas set nome = btrim(p_nome) where id = p_conversa and tipo = 'grupo';
+end;
+$$;
+
+/** Minhas conversas, com o outro lado, a última mensagem e as não lidas. */
+create or replace function public.chat_minhas_conversas()
+returns jsonb
+language sql stable security definer set search_path = ''
+as $$
+  select coalesce(jsonb_agg(x.c order by x.ultima desc), '[]'::jsonb)
+  from (
+    select c.ultima_mensagem_em as ultima,
+      jsonb_build_object(
+        'id', c.id, 'tipo', c.tipo, 'nome', c.nome, 'departamento', c.departamento, 'criado_por', c.criado_por,
+        'ultima_mensagem_em', c.ultima_mensagem_em, 'ultima_mensagem_resumo', c.ultima_mensagem_resumo,
+        'ultima_mensagem_autor', c.ultima_mensagem_autor, 'meu_papel', eu.papel,
+        'nao_lidas', (select count(*) from public.chat_mensagens m
+                      where m.conversa_id = c.id and m.created_at > eu.ultima_leitura_em
+                        and m.autor_id is distinct from eu.usuario_id and m.excluida_em is null),
+        'participantes', (select coalesce(jsonb_agg(jsonb_build_object(
+                             'id', p.id, 'nome', p.nome, 'apelido', p.apelido, 'avatar_path', p.avatar_path,
+                             'area', p.area, 'cargo', p.cargo, 'papel', cp.papel, 'ativo', p.ativo) order by p.nome), '[]'::jsonb)
+                          from public.chat_participantes cp join public.profiles p on p.id = cp.usuario_id
+                          where cp.conversa_id = c.id and (cp.saiu_em is null or c.tipo = 'direta'))
+      ) as c
+    from public.chat_participantes eu
+    join public.chat_conversas c on c.id = eu.conversa_id
+    where eu.usuario_id = (select auth.uid()) and eu.saiu_em is null and public.is_active()
+  ) x;
+$$;
+
+create or replace function public.chat_nao_lidas()
+returns integer
+language sql stable security definer set search_path = ''
+as $$
+  select coalesce(sum((select count(*) from public.chat_mensagens m
+                       where m.conversa_id = eu.conversa_id and m.created_at > eu.ultima_leitura_em
+                         and m.autor_id is distinct from eu.usuario_id and m.excluida_em is null)), 0)::int
+  from public.chat_participantes eu
+  where eu.usuario_id = (select auth.uid()) and eu.saiu_em is null and public.is_active();
+$$;
+
+create or replace function public.chat_marcar_lida(p_conversa uuid)
+returns void
+language sql security definer set search_path = ''
+as $$
+  update public.chat_participantes set ultima_leitura_em = now()
+  where conversa_id = p_conversa and usuario_id = (select auth.uid());
+$$;
+
+/** Busca no histórico das MINHAS conversas. */
+create or replace function public.chat_buscar(p_termo text, p_conversa uuid default null)
+returns table (id uuid, conversa_id uuid, autor_id uuid, autor_nome text, texto text, created_at timestamptz)
+language sql stable security definer set search_path = ''
+as $$
+  select m.id, m.conversa_id, m.autor_id, p.nome, m.texto, m.created_at
+  from public.chat_mensagens m
+  join public.chat_participantes eu on eu.conversa_id = m.conversa_id and eu.usuario_id = (select auth.uid()) and eu.saiu_em is null
+  left join public.profiles p on p.id = m.autor_id
+  where public.is_active() and length(btrim(coalesce(p_termo, ''))) >= 2 and m.excluida_em is null
+    and (p_conversa is null or m.conversa_id = p_conversa)
+    and (m.texto ilike '%' || replace(replace(btrim(p_termo), '%', '\%'), '_', '\_') || '%'
+         or exists (select 1 from jsonb_array_elements(m.anexos) a
+                    where a ->> 'nome' ilike '%' || replace(replace(btrim(p_termo), '%', '\%'), '_', '\_') || '%'))
+  order by m.created_at desc
+  limit 80;
+$$;
+
+revoke all on function public.chat_abrir_direta(uuid) from public, anon;
+revoke all on function public.chat_criar_grupo(text, uuid[]) from public, anon;
+revoke all on function public.chat_grupo_departamento(text) from public, anon;
+revoke all on function public.chat_gerenciar_participante(uuid, uuid, text) from public, anon;
+revoke all on function public.chat_renomear(uuid, text) from public, anon;
+revoke all on function public.chat_minhas_conversas() from public, anon;
+revoke all on function public.chat_nao_lidas() from public, anon;
+revoke all on function public.chat_marcar_lida(uuid) from public, anon;
+revoke all on function public.chat_buscar(text, uuid) from public, anon;
+grant execute on function public.chat_abrir_direta(uuid) to authenticated;
+grant execute on function public.chat_criar_grupo(text, uuid[]) to authenticated;
+grant execute on function public.chat_grupo_departamento(text) to authenticated;
+grant execute on function public.chat_gerenciar_participante(uuid, uuid, text) to authenticated;
+grant execute on function public.chat_renomear(uuid, text) to authenticated;
+grant execute on function public.chat_minhas_conversas() to authenticated;
+grant execute on function public.chat_nao_lidas() to authenticated;
+grant execute on function public.chat_marcar_lida(uuid) to authenticated;
+grant execute on function public.chat_buscar(text, uuid) to authenticated;
+
+do $$
+declare v_tabela text;
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    foreach v_tabela in array array['chat_mensagens', 'chat_participantes'] loop
+      if not exists (select 1 from pg_publication_tables
+                     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = v_tabela) then
+        execute format('alter publication supabase_realtime add table public.%I', v_tabela);
+      end if;
+    end loop;
+  end if;
+end $$;
+
+
+-- ---------------------------------------------------------------------
+-- 0030_conhecimento.sql
+-- ---------------------------------------------------------------------
+
+-- =====================================================================
+-- PortalMPC — 0030 — Central de conhecimento (aprendizagem e procedimentos)
+-- ---------------------------------------------------------------------
+-- Três formas de registrar conhecimento, numa tabela só (`tipo`):
+--   tutorial      → conteúdo em blocos (texto, imagem, vídeo, destaque, arquivo)
+--   procedimento  → passo a passo com checklist interativo por pessoa
+--   arquivo       → documentos enviados (PDF, Word, Excel, imagens…)
+-- Com categorias e subcategorias, departamento, palavras-chave, busca,
+-- controle de versões (cada alteração de conteúdo guarda um retrato),
+-- favoritos, avaliação "foi útil?" e progresso do checklist.
+-- =====================================================================
+
+create or replace function public.texto_normalizado(p text)
+returns text
+language sql immutable set search_path = ''
+as $$
+  select translate(lower(coalesce(p, '')),
+    'áàâãäéèêëíìîïóòôõöúùûüçñ', 'aaaaaeeeeiiiiooooouuuucn');
+$$;
+
+create table if not exists public.conhecimento_categorias (
+  id           uuid primary key default gen_random_uuid(),
+  nome         text not null,
+  descricao    text,
+  pai_id       uuid references public.conhecimento_categorias (id) on delete set null,
+  departamento text,
+  ordem        integer not null default 0,
+  criado_por   uuid references public.profiles (id) on delete set null default auth.uid(),
+  created_at   timestamptz not null default now(),
+  constraint conhecimento_categorias_nome check (length(btrim(nome)) between 1 and 80),
+  constraint conhecimento_categorias_pai check (pai_id is distinct from id)
+);
+
+create table if not exists public.conhecimento_artigos (
+  id                  uuid primary key default gen_random_uuid(),
+  titulo              text not null,
+  resumo              text not null default '',
+  tipo                text not null default 'tutorial',
+  categoria_id        uuid references public.conhecimento_categorias (id) on delete set null,
+  departamento        text,
+  atividade           text,
+  palavras_chave      text[] not null default '{}',
+  -- [{ id, tipo: 'texto'|'titulo'|'imagem'|'video'|'destaque'|'arquivo', ... }]
+  blocos              jsonb not null default '[]'::jsonb,
+  -- [{ id, titulo, descricao, importante, imagem }]
+  passos              jsonb not null default '[]'::jsonb,
+  -- [{ caminho, nome, tipo, tamanho }]
+  anexos              jsonb not null default '[]'::jsonb,
+  publicado           boolean not null default true,
+  destaque            boolean not null default false,
+  versao              integer not null default 1,
+  nota_alteracao      text,
+  visualizacoes       integer not null default 0,
+  uteis               integer not null default 0,
+  nao_uteis           integer not null default 0,
+  texto_busca         text not null default '',
+  criado_por          uuid references public.profiles (id) on delete set null default auth.uid(),
+  criado_por_nome     text,
+  atualizado_por      uuid references public.profiles (id) on delete set null,
+  atualizado_por_nome text,
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now(),
+  constraint conhecimento_artigos_titulo check (length(btrim(titulo)) between 1 and 160),
+  constraint conhecimento_artigos_tipo check (tipo in ('tutorial', 'procedimento', 'arquivo')),
+  constraint conhecimento_artigos_json check (jsonb_typeof(blocos) = 'array' and jsonb_typeof(passos) = 'array' and jsonb_typeof(anexos) = 'array')
+);
+
+create index if not exists conhecimento_artigos_categoria_idx on public.conhecimento_artigos (categoria_id);
+create index if not exists conhecimento_artigos_atualizado_idx on public.conhecimento_artigos (updated_at desc);
+
+create table if not exists public.conhecimento_versoes (
+  id         uuid primary key default gen_random_uuid(),
+  artigo_id  uuid not null references public.conhecimento_artigos (id) on delete cascade,
+  versao     integer not null,
+  titulo     text not null,
+  retrato    jsonb not null,
+  nota       text,
+  autor_id   uuid references public.profiles (id) on delete set null,
+  autor_nome text,
+  created_at timestamptz not null default now(),
+  unique (artigo_id, versao)
+);
+
+create table if not exists public.conhecimento_favoritos (
+  usuario_id uuid not null references public.profiles (id) on delete cascade default auth.uid(),
+  artigo_id  uuid not null references public.conhecimento_artigos (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (usuario_id, artigo_id)
+);
+
+create table if not exists public.conhecimento_avaliacoes (
+  usuario_id uuid not null references public.profiles (id) on delete cascade default auth.uid(),
+  artigo_id  uuid not null references public.conhecimento_artigos (id) on delete cascade,
+  util       boolean not null,
+  comentario text,
+  updated_at timestamptz not null default now(),
+  primary key (usuario_id, artigo_id)
+);
+
+create table if not exists public.conhecimento_progresso (
+  usuario_id    uuid not null references public.profiles (id) on delete cascade default auth.uid(),
+  artigo_id     uuid not null references public.conhecimento_artigos (id) on delete cascade,
+  passos_feitos text[] not null default '{}',
+  updated_at    timestamptz not null default now(),
+  primary key (usuario_id, artigo_id)
+);
+
+alter table public.conhecimento_categorias enable row level security;
+alter table public.conhecimento_artigos    enable row level security;
+alter table public.conhecimento_versoes    enable row level security;
+alter table public.conhecimento_favoritos  enable row level security;
+alter table public.conhecimento_avaliacoes enable row level security;
+alter table public.conhecimento_progresso  enable row level security;
+
+do $$
+begin
+  if not exists (select 1 from pg_policies where tablename = 'conhecimento_artigos' and policyname = 'conhecimento_artigos_select') then
+    create policy conhecimento_categorias_select on public.conhecimento_categorias for select to authenticated
+      using (public.tem_permissao('tela.conhecimento'));
+    create policy conhecimento_categorias_insert on public.conhecimento_categorias for insert to authenticated
+      with check (public.tem_permissao('dados.conhecimento.editar'));
+    create policy conhecimento_categorias_update on public.conhecimento_categorias for update to authenticated
+      using (public.tem_permissao('dados.conhecimento.editar')) with check (public.tem_permissao('dados.conhecimento.editar'));
+    create policy conhecimento_categorias_delete on public.conhecimento_categorias for delete to authenticated
+      using (public.tem_permissao('dados.conhecimento.excluir'));
+
+    -- Rascunho só aparece para quem escreve.
+    create policy conhecimento_artigos_select on public.conhecimento_artigos for select to authenticated
+      using (public.tem_permissao('tela.conhecimento')
+             and (publicado or criado_por = (select auth.uid()) or public.tem_permissao('dados.conhecimento.editar')));
+    create policy conhecimento_artigos_insert on public.conhecimento_artigos for insert to authenticated
+      with check (public.tem_permissao('dados.conhecimento.editar'));
+    create policy conhecimento_artigos_update on public.conhecimento_artigos for update to authenticated
+      using (public.tem_permissao('dados.conhecimento.editar')) with check (public.tem_permissao('dados.conhecimento.editar'));
+    create policy conhecimento_artigos_delete on public.conhecimento_artigos for delete to authenticated
+      using (public.tem_permissao('dados.conhecimento.excluir'));
+
+    create policy conhecimento_versoes_select on public.conhecimento_versoes for select to authenticated
+      using (public.tem_permissao('tela.conhecimento'));
+
+    create policy conhecimento_favoritos_proprios on public.conhecimento_favoritos for all to authenticated
+      using (usuario_id = (select auth.uid()))
+      with check (usuario_id = (select auth.uid()) and public.tem_permissao('tela.conhecimento'));
+    create policy conhecimento_avaliacoes_proprias on public.conhecimento_avaliacoes for all to authenticated
+      using (usuario_id = (select auth.uid()) or public.tem_permissao('dados.conhecimento.editar'))
+      with check (usuario_id = (select auth.uid()) and public.tem_permissao('tela.conhecimento'));
+    create policy conhecimento_progresso_proprio on public.conhecimento_progresso for all to authenticated
+      using (usuario_id = (select auth.uid()))
+      with check (usuario_id = (select auth.uid()) and public.tem_permissao('tela.conhecimento'));
+  end if;
+end $$;
+
+-- Carimbos, texto de busca e controle de versões.
+create or replace function public.conhecimento_artigo_carimbo()
+returns trigger
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_uid uuid := (select auth.uid());
+  v_nome text := (select nome from public.profiles where id = (select auth.uid()));
+  v_mudou boolean;
+begin
+  new.titulo := btrim(new.titulo);
+  new.palavras_chave := coalesce(array(select distinct lower(btrim(x)) from unnest(new.palavras_chave) x where btrim(x) <> ''), '{}');
+
+  if tg_op = 'INSERT' then
+    if v_uid is not null then new.criado_por := v_uid; end if;
+    new.criado_por_nome := coalesce((select nome from public.profiles where id = new.criado_por), new.criado_por_nome);
+    new.atualizado_por := new.criado_por;
+    new.atualizado_por_nome := new.criado_por_nome;
+    new.versao := 1;
+    new.visualizacoes := 0; new.uteis := 0; new.nao_uteis := 0;
+    v_mudou := true;
+  else
+    new.criado_por := old.criado_por;
+    new.criado_por_nome := old.criado_por_nome;
+    new.created_at := old.created_at;
+    v_mudou := new.titulo is distinct from old.titulo or new.resumo is distinct from old.resumo
+            or new.blocos is distinct from old.blocos or new.passos is distinct from old.passos
+            or new.anexos is distinct from old.anexos;
+    if v_mudou then
+      new.versao := old.versao + 1;
+      new.updated_at := now();
+      new.atualizado_por := coalesce(v_uid, old.atualizado_por);
+      new.atualizado_por_nome := coalesce(v_nome, old.atualizado_por_nome);
+    else
+      new.versao := old.versao;
+      -- Contadores e leitura não mexem na data de atualização.
+      if new.categoria_id is distinct from old.categoria_id or new.publicado is distinct from old.publicado
+         or new.palavras_chave is distinct from old.palavras_chave or new.departamento is distinct from old.departamento then
+        new.updated_at := now();
+      else
+        new.updated_at := old.updated_at;
+      end if;
+    end if;
+  end if;
+
+  new.texto_busca := public.texto_normalizado(concat_ws(' ', new.titulo, new.resumo, new.atividade, new.departamento,
+    array_to_string(new.palavras_chave, ' '),
+    (select string_agg(concat_ws(' ', b ->> 'texto', b ->> 'titulo', b ->> 'legenda', b ->> 'nome'), ' ') from jsonb_array_elements(new.blocos) b),
+    (select string_agg(concat_ws(' ', p ->> 'titulo', p ->> 'descricao'), ' ') from jsonb_array_elements(new.passos) p),
+    (select string_agg(a ->> 'nome', ' ') from jsonb_array_elements(new.anexos) a)));
+  return new;
+end;
+$$;
+
+create or replace function public.conhecimento_artigo_versao()
+returns trigger
+language plpgsql security definer set search_path = ''
+as $$
+begin
+  if tg_op = 'INSERT' or new.versao is distinct from old.versao then
+    insert into public.conhecimento_versoes (artigo_id, versao, titulo, retrato, nota, autor_id, autor_nome)
+    values (new.id, new.versao, new.titulo,
+            jsonb_build_object('titulo', new.titulo, 'resumo', new.resumo, 'blocos', new.blocos, 'passos', new.passos, 'anexos', new.anexos),
+            nullif(btrim(coalesce(new.nota_alteracao, '')), ''), new.atualizado_por, new.atualizado_por_nome)
+    on conflict (artigo_id, versao) do nothing;
+  end if;
+  return null;
+end;
+$$;
+
+create or replace function public.conhecimento_avaliacao_contar()
+returns trigger
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_artigo uuid := coalesce(new.artigo_id, old.artigo_id);
+begin
+  update public.conhecimento_artigos a
+     set uteis = (select count(*) from public.conhecimento_avaliacoes v where v.artigo_id = v_artigo and v.util),
+         nao_uteis = (select count(*) from public.conhecimento_avaliacoes v where v.artigo_id = v_artigo and not v.util)
+   where a.id = v_artigo;
+  return null;
+end;
+$$;
+
+revoke all on function public.conhecimento_artigo_carimbo() from public, anon, authenticated;
+revoke all on function public.conhecimento_artigo_versao() from public, anon, authenticated;
+revoke all on function public.conhecimento_avaliacao_contar() from public, anon, authenticated;
+
+create or replace trigger trg_conhecimento_artigo_carimbo
+  before insert or update on public.conhecimento_artigos
+  for each row execute function public.conhecimento_artigo_carimbo();
+create or replace trigger trg_conhecimento_artigo_versao
+  after insert or update on public.conhecimento_artigos
+  for each row execute function public.conhecimento_artigo_versao();
+create or replace trigger trg_conhecimento_avaliacao_contar
+  after insert or update or delete on public.conhecimento_avaliacoes
+  for each row execute function public.conhecimento_avaliacao_contar();
+create or replace trigger trg_audit_conhecimento_artigos
+  after insert or delete on public.conhecimento_artigos
+  for each row execute function public.registrar_auditoria();
+
+/** Conta a leitura (uma chamada por abertura do artigo). */
+create or replace function public.conhecimento_registrar_leitura(p_artigo uuid)
+returns void
+language sql security definer set search_path = ''
+as $$
+  update public.conhecimento_artigos set visualizacoes = visualizacoes + 1
+  where id = p_artigo and public.tem_permissao('tela.conhecimento');
+$$;
+
+revoke all on function public.texto_normalizado(text) from public, anon;
+revoke all on function public.conhecimento_registrar_leitura(uuid) from public, anon;
+grant execute on function public.texto_normalizado(text) to authenticated;
+grant execute on function public.conhecimento_registrar_leitura(uuid) to authenticated;
+
+-- Categorias iniciais: uma por departamento, para a Central não nascer vazia de estrutura.
+insert into public.conhecimento_categorias (nome, descricao, departamento, ordem)
+select v.nome, v.descricao, v.departamento, v.ordem
+from (values
+  ('Fiscal', 'Apurações, obrigações acessórias e rotinas fiscais.', 'Fiscal', 1),
+  ('Contabilidade', 'Fechamentos, conciliações e demonstrações.', 'Contabilidade', 2),
+  ('Departamento Pessoal', 'Admissão, folha, férias, rescisão e eSocial.', 'Departamento Pessoal', 3),
+  ('Legalização', 'Abertura, alteração, licenças e órgãos.', 'Legalização', 4),
+  ('Qualidade e atendimento', 'Integração de clientes, padrões e atendimento.', 'Qualidade', 5),
+  ('Portal e sistemas', 'Como usar o portal e os sistemas do escritório.', null, 6)
+) as v(nome, descricao, departamento, ordem)
+where not exists (select 1 from public.conhecimento_categorias);
+
+
+-- ---------------------------------------------------------------------
+-- 0031_ferramentas_e_arquivos.sql
+-- ---------------------------------------------------------------------
+
+-- =====================================================================
+-- PortalMPC — 0031 — Ferramentas (tabelas das calculadoras) e arquivos
+-- ---------------------------------------------------------------------
+-- 1. `ferramentas_tabelas`: as regras que as calculadoras usam ficam no
+--    banco, com vigência, legislação e link da fonte. Atualizar uma faixa
+--    ou alíquota é incluir uma linha nova com a data de início — a
+--    ferramenta escolhe a que vale na data de referência do cálculo, sem
+--    mexer em código. Só administradores alteram.
+--    Valores conferidos em 10/11/2026 nas fontes oficiais citadas em cada linha.
+-- 2. `ferramentas_calculos`: memória pessoal dos últimos cálculos.
+-- 3. Bucket privado "arquivos" para chat, tarefas, conhecimento e documentos
+--    de empresas, com regra de acesso por pasta.
+-- =====================================================================
+
+create table if not exists public.ferramentas_tabelas (
+  id              uuid primary key default gen_random_uuid(),
+  chave           text not null,
+  vigencia_inicio date not null,
+  titulo          text not null,
+  dados           jsonb not null,
+  fonte           text not null,
+  fonte_url       text,
+  observacao      text,
+  conferido_em    date,
+  atualizado_por  uuid references public.profiles (id) on delete set null,
+  updated_at      timestamptz not null default now(),
+  unique (chave, vigencia_inicio),
+  constraint ferramentas_tabelas_dados check (jsonb_typeof(dados) = 'object')
+);
+
+create table if not exists public.ferramentas_calculos (
+  id          uuid primary key default gen_random_uuid(),
+  usuario_id  uuid not null references public.profiles (id) on delete cascade default auth.uid(),
+  ferramenta  text not null,
+  titulo      text not null,
+  entrada     jsonb not null default '{}'::jsonb,
+  resultado   jsonb not null default '{}'::jsonb,
+  created_at  timestamptz not null default now()
+);
+
+create index if not exists ferramentas_calculos_usuario_idx on public.ferramentas_calculos (usuario_id, ferramenta, created_at desc);
+
+alter table public.ferramentas_tabelas  enable row level security;
+alter table public.ferramentas_calculos enable row level security;
+
+do $$
+begin
+  if not exists (select 1 from pg_policies where tablename = 'ferramentas_tabelas' and policyname = 'ferramentas_tabelas_select') then
+    create policy ferramentas_tabelas_select on public.ferramentas_tabelas for select to authenticated
+      using (public.tem_permissao('tela.ferramentas'));
+    create policy ferramentas_tabelas_escrita on public.ferramentas_tabelas for all to authenticated
+      using (public.is_admin()) with check (public.is_admin());
+    create policy ferramentas_calculos_proprios on public.ferramentas_calculos for all to authenticated
+      using (usuario_id = (select auth.uid()))
+      with check (usuario_id = (select auth.uid()) and public.tem_permissao('tela.ferramentas'));
+  end if;
+end $$;
+
+create or replace function public.ferramentas_tabela_carimbo()
+returns trigger
+language plpgsql set search_path = ''
+as $$
+begin
+  new.updated_at := now();
+  new.atualizado_por := coalesce((select auth.uid()), new.atualizado_por);
+  return new;
+end;
+$$;
+
+revoke all on function public.ferramentas_tabela_carimbo() from public, anon, authenticated;
+
+create or replace trigger trg_ferramentas_tabela_carimbo
+  before insert or update on public.ferramentas_tabelas
+  for each row execute function public.ferramentas_tabela_carimbo();
+create or replace trigger trg_audit_ferramentas_tabelas
+  after insert or update or delete on public.ferramentas_tabelas
+  for each row execute function public.registrar_auditoria();
+
+insert into public.ferramentas_tabelas (chave, vigencia_inicio, titulo, dados, fonte, fonte_url, observacao, conferido_em) values
+('salario_minimo', '2026-01-01', 'Salário mínimo nacional',
+ '{"valor": 1621.00}',
+ 'Decreto nº 12.797/2025', null, null, '2026-11-10'),
+
+('inss_empregado', '2026-01-01', 'INSS — empregado, doméstico e avulso (tabela progressiva)',
+ '{"teto": 8475.55, "faixas": [{"ate": 1621.00, "aliquota": 7.5}, {"ate": 2902.84, "aliquota": 9}, {"ate": 4354.27, "aliquota": 12}, {"ate": 8475.55, "aliquota": 14}]}',
+ 'Portaria Interministerial MPS/MF nº 13, de 9/1/2026',
+ 'https://www.gov.br/inss/pt-br/direitos-e-deveres/inscricao-e-contribuicao/tabela-de-contribuicao-mensal',
+ 'Alíquotas aplicadas faixa a faixa (EC 103/2019). Vale a partir da competência janeiro/2026.', '2026-11-10'),
+
+('inss_individual', '2026-01-01', 'INSS — contribuinte individual, pró-labore e facultativo',
+ '{"minimo": 1621.00, "teto": 8475.55, "aliquota_prolabore": 11, "aliquota_normal": 20, "aliquota_simplificado": 11, "aliquota_mei": 5, "patronal": 20}',
+ 'Lei nº 8.212/1991, arts. 21, 22 e 30, § 4º; Portaria Interministerial MPS/MF nº 13/2026',
+ 'https://www.gov.br/inss/pt-br/direitos-e-deveres/inscricao-e-contribuicao/tabela-de-contribuicao-mensal',
+ 'Pró-labore e autônomo que presta serviço a empresa: 11% retidos, até o teto. Contribuição patronal de 20% não se aplica a empresas do Simples nos Anexos I, II, III e V.', '2026-11-10'),
+
+('irrf_mensal', '2026-01-01', 'IRRF — tabela progressiva mensal e redução da Lei 15.270/2025',
+ '{"dependente": 189.59, "desconto_simplificado": 607.20, "faixas": [{"ate": 2428.80, "aliquota": 0, "deducao": 0}, {"ate": 2826.65, "aliquota": 7.5, "deducao": 182.16}, {"ate": 3751.05, "aliquota": 15, "deducao": 394.16}, {"ate": 4664.68, "aliquota": 22.5, "deducao": 675.49}, {"ate": null, "aliquota": 27.5, "deducao": 908.73}], "reducao": {"isento_ate": 5000.00, "limite": 7350.00, "valor_maximo": 312.89, "constante": 978.62, "fator": 0.133145}}',
+ 'Lei nº 15.191/2025 (tabela) e Lei nº 15.270/2025 (redução) — tabelas 2026 da Receita Federal',
+ 'https://www.gov.br/receitafederal/pt-br/assuntos/meu-imposto-de-renda/tabelas/2026',
+ 'Redução: até R$ 5.000,00 de rendimentos tributáveis o imposto é zerado (redução de até R$ 312,89); de R$ 5.000,01 a R$ 7.350,00, redução = 978,62 − 0,133145 × rendimentos tributáveis.', '2026-11-10'),
+
+('fgts', '1990-05-14', 'FGTS — depósito mensal e multa rescisória',
+ '{"aliquota": 8, "aliquota_aprendiz": 2, "multa_sem_justa_causa": 40, "multa_acordo": 20}',
+ 'Lei nº 8.036/1990, arts. 15 e 18; CLT, art. 484-A (rescisão por acordo)', null, null, '2026-11-10'),
+
+('aviso_previo', '2011-10-13', 'Aviso prévio proporcional',
+ '{"dias_base": 30, "dias_por_ano": 3, "maximo": 90}',
+ 'Lei nº 12.506/2011; CLT, art. 487', null,
+ '30 dias + 3 dias por ano completo de serviço na mesma empresa, até 90 dias.', '2026-11-10'),
+
+('mei', '2026-01-01', 'MEI — DAS mensal e limite',
+ '{"limite_anual": 81000.00, "inss_percentual": 5, "icms": 1.00, "iss": 5.00, "caminhoneiro_percentual": 12, "limite_caminhoneiro": 251600.00}',
+ 'LC nº 123/2006, arts. 18-A e 18-F; salário mínimo do Decreto nº 12.797/2025', null,
+ 'INSS = 5% do salário mínimo (12% para o MEI transportador autônomo de cargas), mais R$ 1,00 de ICMS e/ou R$ 5,00 de ISS conforme a atividade.', '2026-11-10'),
+
+('simples_nacional', '2018-01-01', 'Simples Nacional — Anexos I a V',
+ '{"limite": 4800000.00, "sublimite": 3600000.00, "fator_r": 28,
+   "anexos": {
+     "I":   {"nome": "Comércio", "tributos": ["IRPJ", "CSLL", "Cofins", "PIS/Pasep", "CPP", "ICMS"],
+             "faixas": [{"ate": 180000, "aliquota": 4.00, "deducao": 0, "reparticao": [5.50, 3.50, 12.74, 2.76, 41.50, 34.00]},
+                        {"ate": 360000, "aliquota": 7.30, "deducao": 5940, "reparticao": [5.50, 3.50, 12.74, 2.76, 41.50, 34.00]},
+                        {"ate": 720000, "aliquota": 9.50, "deducao": 13860, "reparticao": [5.50, 3.50, 12.74, 2.76, 42.00, 33.50]},
+                        {"ate": 1800000, "aliquota": 10.70, "deducao": 22500, "reparticao": [5.50, 3.50, 12.74, 2.76, 42.00, 33.50]},
+                        {"ate": 3600000, "aliquota": 14.30, "deducao": 87300, "reparticao": [5.50, 3.50, 12.74, 2.76, 42.00, 33.50]},
+                        {"ate": 4800000, "aliquota": 19.00, "deducao": 378000, "reparticao": [13.50, 10.00, 28.27, 6.13, 42.10, 0]}]},
+     "II":  {"nome": "Indústria", "tributos": ["IRPJ", "CSLL", "Cofins", "PIS/Pasep", "CPP", "IPI", "ICMS"],
+             "faixas": [{"ate": 180000, "aliquota": 4.50, "deducao": 0, "reparticao": [5.50, 3.50, 11.51, 2.49, 37.50, 7.50, 32.00]},
+                        {"ate": 360000, "aliquota": 7.80, "deducao": 5940, "reparticao": [5.50, 3.50, 11.51, 2.49, 37.50, 7.50, 32.00]},
+                        {"ate": 720000, "aliquota": 10.00, "deducao": 13860, "reparticao": [5.50, 3.50, 11.51, 2.49, 37.50, 7.50, 32.00]},
+                        {"ate": 1800000, "aliquota": 11.20, "deducao": 22500, "reparticao": [5.50, 3.50, 11.51, 2.49, 37.50, 7.50, 32.00]},
+                        {"ate": 3600000, "aliquota": 14.70, "deducao": 85500, "reparticao": [5.50, 3.50, 11.51, 2.49, 37.50, 7.50, 32.00]},
+                        {"ate": 4800000, "aliquota": 30.00, "deducao": 720000, "reparticao": [8.50, 7.50, 20.96, 4.54, 23.50, 35.00, 0]}]},
+     "III": {"nome": "Serviços (Anexo III)", "tributos": ["IRPJ", "CSLL", "Cofins", "PIS/Pasep", "CPP", "ISS"],
+             "faixas": [{"ate": 180000, "aliquota": 6.00, "deducao": 0, "reparticao": [4.00, 3.50, 12.82, 2.78, 43.40, 33.50]},
+                        {"ate": 360000, "aliquota": 11.20, "deducao": 9360, "reparticao": [4.00, 3.50, 14.05, 3.05, 43.40, 32.00]},
+                        {"ate": 720000, "aliquota": 13.50, "deducao": 17640, "reparticao": [4.00, 3.50, 13.64, 2.96, 43.40, 32.50]},
+                        {"ate": 1800000, "aliquota": 16.00, "deducao": 35640, "reparticao": [4.00, 3.50, 13.64, 2.96, 43.40, 32.50]},
+                        {"ate": 3600000, "aliquota": 21.00, "deducao": 125640, "reparticao": [4.00, 3.50, 12.82, 2.78, 43.40, 33.50]},
+                        {"ate": 4800000, "aliquota": 33.00, "deducao": 648000, "reparticao": [35.00, 15.00, 16.03, 3.47, 30.50, 0]}]},
+     "IV":  {"nome": "Serviços (Anexo IV — CPP fora do DAS)", "tributos": ["IRPJ", "CSLL", "Cofins", "PIS/Pasep", "ISS"],
+             "faixas": [{"ate": 180000, "aliquota": 4.50, "deducao": 0, "reparticao": [18.80, 15.20, 17.67, 3.83, 44.50]},
+                        {"ate": 360000, "aliquota": 9.00, "deducao": 8100, "reparticao": [19.80, 15.20, 20.55, 4.45, 40.00]},
+                        {"ate": 720000, "aliquota": 10.20, "deducao": 12420, "reparticao": [20.80, 15.20, 19.73, 4.27, 40.00]},
+                        {"ate": 1800000, "aliquota": 14.00, "deducao": 39780, "reparticao": [17.80, 19.20, 18.90, 4.10, 40.00]},
+                        {"ate": 3600000, "aliquota": 22.00, "deducao": 183780, "reparticao": [18.80, 19.20, 18.08, 3.92, 40.00]},
+                        {"ate": 4800000, "aliquota": 33.00, "deducao": 828000, "reparticao": [53.50, 21.50, 20.55, 4.45, 0]}]},
+     "V":   {"nome": "Serviços (Anexo V — sujeito ao Fator R)", "tributos": ["IRPJ", "CSLL", "Cofins", "PIS/Pasep", "CPP", "ISS"],
+             "faixas": [{"ate": 180000, "aliquota": 15.50, "deducao": 0, "reparticao": [25.00, 15.00, 14.10, 3.05, 28.85, 14.00]},
+                        {"ate": 360000, "aliquota": 18.00, "deducao": 4500, "reparticao": [23.00, 15.00, 14.10, 3.05, 27.85, 17.00]},
+                        {"ate": 720000, "aliquota": 19.50, "deducao": 9900, "reparticao": [24.00, 15.00, 14.92, 3.23, 23.85, 19.00]},
+                        {"ate": 1800000, "aliquota": 20.50, "deducao": 17100, "reparticao": [21.00, 15.00, 15.74, 3.41, 23.85, 21.00]},
+                        {"ate": 3600000, "aliquota": 23.00, "deducao": 62100, "reparticao": [23.00, 12.50, 14.10, 3.05, 23.85, 23.50]},
+                        {"ate": 4800000, "aliquota": 30.50, "deducao": 540000, "reparticao": [35.00, 15.50, 16.44, 3.56, 29.50, 0]}]}
+   }}',
+ 'LC nº 123/2006, Anexos I a V (redação da LC nº 155/2016), art. 18 e § 5º-J (Fator R)',
+ 'https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp123.htm',
+ 'Alíquota efetiva = (RBT12 × alíquota nominal − parcela a deduzir) ÷ RBT12. Acima de R$ 3,6 milhões (sublimite), ICMS e ISS são recolhidos fora do DAS. Na 5ª faixa dos Anexos III, IV e V o ISS efetivo é limitado a 5%, com a diferença transferida aos tributos federais.', '2026-11-10'),
+
+('lucro_presumido', '2026-01-01', 'Lucro Presumido — presunção e alíquotas',
+ '{"irpj": 15, "adicional_irpj": 10, "limite_adicional_mensal": 20000.00, "csll": 9, "pis": 0.65, "cofins": 3,
+   "presuncao": {
+     "comercio":  {"nome": "Comércio e indústria", "irpj": 8, "csll": 12},
+     "servicos":  {"nome": "Serviços em geral", "irpj": 32, "csll": 32},
+     "hospitalares": {"nome": "Serviços hospitalares (sociedade empresária)", "irpj": 8, "csll": 12},
+     "transporte_cargas": {"nome": "Transporte de cargas", "irpj": 8, "csll": 12},
+     "transporte_passageiros": {"nome": "Transporte de passageiros", "irpj": 16, "csll": 12},
+     "combustiveis": {"nome": "Revenda de combustíveis", "irpj": 1.6, "csll": 12}
+   },
+   "acrescimo_lc224": {"percentual": 10, "limite_anual": 5000000.00, "irpj_desde": "2026-01-01", "csll_desde": "2026-04-01"}}',
+ 'Lei nº 9.249/1995, arts. 15 e 20; Lei nº 9.430/1996; Lei nº 9.718/1998; LC nº 224/2025', null,
+ 'LC 224/2025: os percentuais de presunção sobem 10% sobre a parcela da receita bruta anual que passar de R$ 5 milhões (IRPJ desde 1º/1/2026; CSLL após a noventena, a partir do 2º trimestre de 2026). Confirme a regulamentação da Receita antes de usar em planejamento. PIS/Cofins no regime cumulativo.', '2026-11-10'),
+
+('lucro_real', '2003-02-01', 'Lucro Real — alíquotas',
+ '{"irpj": 15, "adicional_irpj": 10, "limite_adicional_mensal": 20000.00, "csll": 9, "pis": 1.65, "cofins": 7.6}',
+ 'Lei nº 9.249/1995; Lei nº 10.637/2002 (PIS) e Lei nº 10.833/2003 (Cofins) — regime não cumulativo', null,
+ 'PIS/Cofins não cumulativos: o valor devido depende dos créditos. CSLL de 9% para a regra geral (instituições financeiras e seguradoras têm alíquotas maiores).', '2026-11-10'),
+
+('acrescimos_federais', '1997-01-01', 'Tributos federais em atraso — multa e juros de mora',
+ '{"multa_dia": 0.33, "multa_teto": 20, "juros_mes_pagamento": 1}',
+ 'Lei nº 9.430/1996, art. 61', 'https://www.gov.br/receitafederal/pt-br/assuntos/orientacao-tributaria/pagamentos-e-parcelamentos/taxa-de-juros-selic',
+ 'Multa de mora de 0,33% por dia de atraso, limitada a 20%. Juros: Selic acumulada do mês seguinte ao vencimento até o mês anterior ao pagamento, mais 1% no mês do pagamento.', '2026-11-10')
+on conflict (chave, vigencia_inicio) do nothing;
+
+-- ---------------------------------------------------------------------
+-- Arquivos: bucket privado com acesso por pasta
+-- ---------------------------------------------------------------------
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('arquivos', 'arquivos', false, 26214400, array[
+  'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+  'application/pdf', 'text/plain', 'text/csv',
+  'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.oasis.opendocument.text', 'application/vnd.oasis.opendocument.spreadsheet',
+  'application/zip', 'application/x-zip-compressed', 'application/xml', 'text/xml',
+  'video/mp4', 'video/webm', 'audio/mpeg', 'audio/ogg'])
+on conflict (id) do update
+  set public = false, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+
+/**
+ * Quem pode ler ou gravar um arquivo, pela pasta:
+ *   chat/<conversa>/…          participantes da conversa
+ *   tarefas/<tarefa>/…         quem vê a tarefa
+ *   conhecimento/<artigo>/…    quem vê a Central (grava: quem escreve nela)
+ *   empresas/<empresa>/…       quem lê a Legalização (grava: quem edita)
+ */
+create or replace function public.arquivo_acesso(p_nome text, p_gravar boolean)
+returns boolean
+language plpgsql stable security definer set search_path = ''
+as $$
+declare
+  v_partes text[] := string_to_array(p_nome, '/');
+  v_id uuid;
+begin
+  if not public.is_active() or coalesce(array_length(v_partes, 1), 0) < 3 then
+    return false;
+  end if;
+  begin
+    v_id := v_partes[2]::uuid;
+  exception when others then
+    return false;
+  end;
+  return case v_partes[1]
+    when 'chat' then public.chat_participa(v_id) and (not p_gravar or public.tem_permissao('tela.chat'))
+    when 'tarefas' then public.tarefa_pode_ver(v_id)
+    when 'conhecimento' then case when p_gravar then public.tem_permissao('dados.conhecimento.editar')
+                                  else public.tem_permissao('tela.conhecimento') end
+    when 'empresas' then case when p_gravar then public.can_write_legalizacao() else public.can_read_legalizacao() end
+    else false
+  end;
+end;
+$$;
+
+revoke all on function public.arquivo_acesso(text, boolean) from public, anon;
+grant execute on function public.arquivo_acesso(text, boolean) to authenticated;
+
+do $$
+begin
+  if not exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname = 'arquivos_ler') then
+    create policy arquivos_ler on storage.objects for select to authenticated
+      using (bucket_id = 'arquivos' and public.arquivo_acesso(name, false));
+    create policy arquivos_gravar on storage.objects for insert to authenticated
+      with check (bucket_id = 'arquivos' and public.arquivo_acesso(name, true));
+    create policy arquivos_apagar on storage.objects for delete to authenticated
+      using (bucket_id = 'arquivos' and (owner_id = (select auth.uid())::text or public.is_admin()));
+  end if;
+end $$;
+
+
+-- ---------------------------------------------------------------------
+-- 0032_chat_participante_protegido.sql
+-- ---------------------------------------------------------------------
+
+-- =====================================================================
+-- PortalMPC — 0032: participante do chat só altera a própria leitura
+--
+-- A política de UPDATE de `chat_participantes` deixa cada pessoa mexer na
+-- própria linha, para marcar a conversa como lida. Sem esta trava, a mesma
+-- política permitiria, por chamada direta à API, virar "admin" do grupo
+-- (`papel`) ou voltar a um grupo de onde foi removida (`saiu_em`).
+--
+-- Entrar, sair e mudar de papel continuam passando só pelas funções
+-- `chat_gerenciar_participante`, `chat_criar_grupo` e
+-- `chat_grupo_departamento`, que conferem quem pode fazer o quê.
+-- =====================================================================
+
+create or replace function public.chat_participante_proteger()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  -- Chamada direta do usuário (as funções do chat rodam como dono do banco).
+  if current_user = 'authenticated' then
+    new.conversa_id := old.conversa_id;
+    new.usuario_id := old.usuario_id;
+    new.papel := old.papel;
+    new.entrou_em := old.entrou_em;
+    new.saiu_em := old.saiu_em;
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public.chat_participante_proteger() from public, anon, authenticated;
+
+create or replace trigger trg_chat_participante_proteger
+  before update on public.chat_participantes
+  for each row execute function public.chat_participante_proteger();
 
 
 commit;
