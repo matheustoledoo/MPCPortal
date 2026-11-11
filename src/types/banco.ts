@@ -68,6 +68,8 @@ export interface Empresa {
   situacao: 'ativa' | 'inativa';
   data_saida: string | null;
   motivo_saida: string | null;
+  /** Espelho de `data_saida` para a grade (a coluna ADM usa o mesmo nome de campo). */
+  saida_em?: string | null;
 
   origem: OrigemRegistro;
   numero_origem_saude: number | null;

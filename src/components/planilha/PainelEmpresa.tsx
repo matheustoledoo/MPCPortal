@@ -3,9 +3,11 @@
 import { useEffect, useState } from 'react';
 
 import Link from 'next/link';
-import { CalendarDays, ClipboardList, Handshake, Lock, Save, X } from 'lucide-react';
+import { Archive, CalendarDays, ClipboardList, Handshake, Lock, RotateCcw, Save, X } from 'lucide-react';
 
+import { HistoricoEmpresa } from '@/components/planilha/HistoricoEmpresa';
 import { AreaTexto, Botao, Campo, Selecao, Selo, cn, useAvisos } from '@/components/ui';
+import { CampoOpcoes } from '@/components/ui/CampoOpcoes';
 import { COLUNAS_ADMINISTRATIVAS, COLUNAS_GERAIS, type DefinicaoColuna } from '@/lib/colunas';
 import { prepararValor, type LinhaEmpresa } from '@/lib/empresas';
 import { formatarParaExibicao, mascararPorTipo } from '@/lib/mascaras';
@@ -35,6 +37,11 @@ export function PainelEmpresa({
   colunasEquipe = [],
   resultadosFormula,
   atalhos = {},
+  podeOpcoes = false,
+  souAdmin = false,
+  meuId = '',
+  aoInativar,
+  aoReativar,
   aoFechar,
   aoSalvar,
 }: {
@@ -49,6 +56,12 @@ export function PainelEmpresa({
   colunasEquipe?: DefinicaoColuna[];
   resultadosFormula?: Record<string, ResultadoFormula>;
   atalhos?: AtalhosEmpresa;
+  /** Pode criar e excluir opções das listas ("+ Adicionar outro"). */
+  podeOpcoes?: boolean;
+  souAdmin?: boolean;
+  meuId?: string;
+  aoInativar?: (empresa: LinhaEmpresa) => void;
+  aoReativar?: (empresa: LinhaEmpresa) => void;
   aoFechar: () => void;
   aoSalvar: (
     gerais: Record<string, unknown>,
@@ -59,7 +72,7 @@ export function PainelEmpresa({
   const [valores, setValores] = useState<Record<string, string>>({});
   const [erros, setErros] = useState<Record<string, string>>({});
   const [salvando, setSalvando] = useState(false);
-  const [aba, setAba] = useState<'gerais' | 'administrativos'>('gerais');
+  const [aba, setAba] = useState<'gerais' | 'administrativos' | 'historico' | 'documentos'>('gerais');
 
   useEffect(() => {
     if (!aberto) return;
@@ -212,7 +225,9 @@ export function PainelEmpresa({
     }
   }
 
-  const colunasAba = aba === 'gerais' ? COLUNAS_GERAIS : COLUNAS_ADMINISTRATIVAS;
+  const colunasAba = aba === 'administrativos' ? COLUNAS_ADMINISTRATIVAS : COLUNAS_GERAIS;
+  const abaDeDados = aba === 'gerais' || aba === 'administrativos';
+  const inativa = empresa?.situacao === 'inativa';
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -234,6 +249,12 @@ export function PainelEmpresa({
                 ? `Atualizado em ${new Date(empresa.updated_at).toLocaleString('pt-BR')}`
                 : 'Preencha os dados. Apenas a razão social é obrigatória.'}
             </p>
+            {empresa && (
+              <p className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <Selo tom={inativa ? 'neutro' : 'sucesso'}>{inativa ? 'Inativa — fora da carteira' : 'Ativa na carteira'}</Selo>
+                {inativa && empresa.data_saida && <span className="text-xs text-texto-suave">saiu em {empresa.data_saida.split('-').reverse().join('/')}{empresa.motivo_saida ? ` · ${empresa.motivo_saida}` : ''}</span>}
+              </p>
+            )}
           </div>
           <button
             onClick={aoFechar}
@@ -273,20 +294,20 @@ export function PainelEmpresa({
           </nav>
         )}
 
-        {podeVerAdministrativo && (
-          <div className="flex gap-1 border-b border-borda px-5 pt-3">
-            {(['gerais', 'administrativos'] as const).map((chave) => (
+        {(podeVerAdministrativo || empresa) && (
+          <div className="flex gap-1 overflow-x-auto border-b border-borda px-5 pt-3">
+            {(['gerais', ...(podeVerAdministrativo ? (['administrativos'] as const) : []), ...(empresa ? (['historico', 'documentos'] as const) : [])] as const).map((chave) => (
               <button
                 key={chave}
                 onClick={() => setAba(chave)}
                 className={cn(
-                  'flex items-center gap-1.5 rounded-t-lg border-b-2 px-3.5 py-2 text-sm font-medium transition-colors',
+                  'flex shrink-0 items-center gap-1.5 rounded-t-lg border-b-2 px-3.5 py-2 text-sm font-medium transition-colors',
                   aba === chave
                     ? 'border-marca-600 text-marca-800'
                     : 'border-transparent text-texto-suave hover:text-texto',
                 )}
               >
-                {chave === 'gerais' ? 'Dados gerais' : 'Dados administrativos'}
+                {chave === 'gerais' ? 'Dados gerais' : chave === 'administrativos' ? 'Dados administrativos' : chave === 'historico' ? 'Histórico' : 'Documentos'}
                 {chave === 'administrativos' && <Lock className="h-3 w-3 text-alerta" />}
               </button>
             ))}
@@ -302,7 +323,11 @@ export function PainelEmpresa({
             </div>
           )}
 
-          {colunasAba.map((coluna) => {
+          {empresa && !abaDeDados && (
+            <HistoricoEmpresa empresaId={empresa.id} modo={aba === 'documentos' ? 'documentos' : 'historico'} podeEditar={podeEditar} podeOpcoes={podeOpcoes} souAdmin={souAdmin} meuId={meuId} />
+          )}
+
+          {abaDeDados && colunasAba.map((coluna) => {
             // Fora das colunas atribuídas o campo aparece, mas travado — o
             // gatilho `aplicar_colunas_permitidas` recusaria a alteração.
             const foraDaAtribuicao =
@@ -338,6 +363,23 @@ export function PainelEmpresa({
                   />
                   <span className="text-sm font-medium text-texto-suave">{coluna.rotulo}</span>
                 </label>
+              );
+            }
+
+            if (coluna.grupoOpcoes) {
+              // Lista do banco: quem pode gerenciar opções vê "+ Adicionar outro".
+              return (
+                <CampoOpcoes
+                  key={coluna.campo}
+                  grupo={coluna.grupoOpcoes}
+                  rotulo={coluna.rotulo}
+                  valor={valores[coluna.campo] || null}
+                  aoMudar={(v) => definir(coluna.campo, v ?? '', coluna.tipo)}
+                  podeGerenciar={podeOpcoes && !somenteLeitura}
+                  erro={erros[coluna.campo]}
+                  desabilitado={somenteLeitura || salvando}
+                  dica={coluna.campo === 'status' ? 'INATIVO e BAIXADO tiram a empresa da carteira ativa.' : undefined}
+                />
               );
             }
 
@@ -377,7 +419,7 @@ export function PainelEmpresa({
             );
           })}
 
-          {(() => {
+          {abaDeDados && (() => {
             const daAba = colunasEquipe.filter((c) =>
               aba === 'gerais' ? !c.confidencial : c.confidencial && podeVerAdministrativo,
             );
@@ -475,14 +517,22 @@ export function PainelEmpresa({
           )}
         </div>
 
-        <footer className="flex justify-end gap-2 border-t border-borda bg-superficie px-5 py-3.5">
+        <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-borda bg-superficie px-5 py-3.5">
+          {empresa && podeEditar && (inativa ? aoReativar : aoInativar) && (
+            <Botao variante="fantasma" className="mr-auto" onClick={() => (inativa ? aoReativar?.(empresa) : aoInativar?.(empresa))} disabled={salvando}>
+              {inativa ? <RotateCcw className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
+              {inativa ? 'Reativar empresa' : 'Inativar (saiu da carteira)'}
+            </Botao>
+          )}
           <Botao variante="secundario" onClick={aoFechar} disabled={salvando}>
-            Cancelar
+            {abaDeDados ? 'Cancelar' : 'Fechar'}
           </Botao>
-          <Botao onClick={enviar} carregando={salvando} disabled={!podeEditar}>
-            <Save className="h-4 w-4" />
-            {empresa ? 'Salvar alterações' : 'Cadastrar empresa'}
-          </Botao>
+          {abaDeDados && (
+            <Botao onClick={enviar} carregando={salvando} disabled={!podeEditar}>
+              <Save className="h-4 w-4" />
+              {empresa ? 'Salvar alterações' : 'Cadastrar empresa'}
+            </Botao>
+          )}
         </footer>
       </div>
     </div>

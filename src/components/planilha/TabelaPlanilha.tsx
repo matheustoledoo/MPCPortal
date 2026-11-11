@@ -5,6 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import Link from 'next/link';
 import {
   AlertTriangle,
+  Archive,
   ArrowDown,
   ArrowDownUp,
   ArrowUp,
@@ -20,6 +21,7 @@ import {
   Lock,
   PenLine,
   Pencil,
+  RotateCcw,
   SearchX,
   UserCheck,
   X,
@@ -34,6 +36,7 @@ import { MenuColuna } from '@/components/planilha/MenuColuna';
 import { PainelColunas } from '@/components/planilha/PainelColunas';
 import { PainelEmpresa, type AtalhosEmpresa } from '@/components/planilha/PainelEmpresa';
 import {
+  AreaTexto,
   Botao,
   Campo,
   EsqueletoLinhas,
@@ -46,14 +49,17 @@ import {
   cn,
   useAvisos,
 } from '@/components/ui';
-import type { ResponsavelDeColuna } from '@/lib/atribuicoes';
-import { colunasPara, mesclarColunas, type DefinicaoColuna } from '@/lib/colunas';
+import { CampoOpcoes } from '@/components/ui/CampoOpcoes';
+import { hojeIso, type ResponsavelDeColuna } from '@/lib/atribuicoes';
+import { GRUPOS_OPCOES_EMPRESA, colunasPara, mesclarColunas, type DefinicaoColuna } from '@/lib/colunas';
 import {
   atualizarEmMassa,
   carregarTodasEmpresas,
   criarEmpresa,
   excluirEmpresas,
+  inativarEmpresas,
   prepararValor,
+  reativarEmpresas,
   salvarCampoAdministrativo,
   salvarCampoExtra,
   salvarCampoGeral,
@@ -76,6 +82,7 @@ import {
   type LinhaPlanilha,
   type ResultadoFormula,
 } from '@/lib/planilha/valores';
+import { useOpcoes } from '@/lib/opcoes';
 import { criarClienteNavegador } from '@/lib/supabase/client';
 import type { PlanilhaColuna, TabelaPlanilha as NomeTabela } from '@/types/banco';
 
@@ -112,6 +119,9 @@ export function TabelaPlanilha({
   podeExportar = true,
   podeImportar = false,
   podePersonalizarColunas = false,
+  podeOpcoes = false,
+  souAdmin = false,
+  meuId = '',
   colunasEditaveis = [],
   responsaveisPorColuna = {},
   definicoesIniciais = [],
@@ -127,6 +137,10 @@ export function TabelaPlanilha({
   podeExportar?: boolean;
   podeImportar?: boolean;
   podePersonalizarColunas?: boolean;
+  /** Pode criar/excluir opções das listas ("+ Adicionar outro"). */
+  podeOpcoes?: boolean;
+  souAdmin?: boolean;
+  meuId?: string;
   /** Restrição pessoal de colunas. Vazio = pode editar todas as liberadas. */
   colunasEditaveis?: string[];
   /** Coluna → atribuições ativas. Visível para qualquer um que abra a tela. */
@@ -148,9 +162,17 @@ export function TabelaPlanilha({
   const [erro, setErro] = useState<string | null>(null);
   const [definicoes, setDefinicoes] = useState<PlanilhaColuna[]>(definicoesIniciais);
 
+  // Listas do banco (tributação com HÍBRIDO, status, licenças…): o que a equipe
+  // adiciona com "+ Adicionar outro" aparece nas sugestões e nos filtros.
+  const opcoesBanco = useOpcoes(...GRUPOS_OPCOES_EMPRESA);
+  const assinaturaOpcoes = GRUPOS_OPCOES_EMPRESA.map((g) => opcoesBanco[g].map((o) => o.valor).join('|')).join('§');
   const colunas = useMemo(
-    () => mesclarColunas(colunasPara(podeVerAdministrativo), definicoes),
-    [podeVerAdministrativo, definicoes],
+    () =>
+      mesclarColunas(colunasPara(podeVerAdministrativo), definicoes).map((c) =>
+        c.grupoOpcoes && opcoesBanco[c.grupoOpcoes]?.length ? { ...c, opcoes: opcoesBanco[c.grupoOpcoes].map((o) => o.valor) } : c,
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `assinaturaOpcoes` resume `opcoesBanco`
+    [podeVerAdministrativo, definicoes, assinaturaOpcoes],
   );
 
   const carregar = useCallback(async () => {
@@ -252,6 +274,11 @@ export function TabelaPlanilha({
   const [regras, setRegras] = useState<RegraFiltro[]>([]);
   const [empresaFoco, setEmpresaFoco] = useState<string | null>(parametros.empresa ?? null);
   const [somenteVencimentos, setSomenteVencimentos] = useState(Boolean(parametros.vencimentos));
+  // Carteira: por padrão, só as empresas ativas. Quem chega por link para uma
+  // empresa ou já filtrando por status vê todas, para o link nunca "sumir".
+  const [carteira, setCarteira] = useState<'ativas' | 'inativas' | 'todas'>(
+    parametros.empresa || parametros.filtros?.status || parametros.filtros?.situacao ? 'todas' : 'ativas',
+  );
   const [pagina, setPagina] = useState(1);
 
   useEffect(() => {
@@ -285,6 +312,7 @@ export function TabelaPlanilha({
   const baseFiltrada = useMemo(() => {
     let base = linhas as unknown as LinhaPlanilha[];
     if (empresaFoco) base = base.filter((l) => l.id === empresaFoco);
+    else if (carteira !== 'todas') base = base.filter((l) => (l.situacao === 'inativa') === (carteira === 'inativas'));
     if (somenteVencimentos) {
       const limite = new Date();
       limite.setDate(limite.getDate() + 180);
@@ -292,7 +320,18 @@ export function TabelaPlanilha({
       base = base.filter((l) => CAMPOS_VALIDADE.some((c) => typeof l[c] === 'string' && (l[c] as string) <= iso));
     }
     return base;
-  }, [linhas, empresaFoco, somenteVencimentos]);
+  }, [linhas, empresaFoco, somenteVencimentos, carteira]);
+
+  const resumoCarteira = useMemo(() => {
+    const inativas = linhas.filter((l) => l.situacao === 'inativa');
+    const inicioAno = `${new Date().getFullYear()}-01-01`;
+    return {
+      ativas: linhas.length - inativas.length,
+      inativas: inativas.length,
+      saidasNoAno: inativas.filter((l) => (l.data_saida ?? '') >= inicioAno).length,
+      entradasNoAno: linhas.filter((l) => (l.data_inicio ?? '') >= inicioAno).length,
+    };
+  }, [linhas]);
 
   const filtradas = useMemo(
     () =>
@@ -443,6 +482,36 @@ export function TabelaPlanilha({
   const [mostrarFormulas, setMostrarFormulas] = useState(false);
   const [massa, setMassa] = useState<{ campo: string; valor: string } | null>(null);
   const [aplicandoMassa, setAplicandoMassa] = useState(false);
+  /** Inativar/reativar: os ids alvo e os dados do formulário. */
+  const [saida, setSaida] = useState<{ acao: 'inativar' | 'reativar'; ids: string[]; data: string; motivo: string | null; observacao: string } | null>(null);
+  const [movendoCarteira, setMovendoCarteira] = useState(false);
+
+  async function confirmarSaida() {
+    if (!saida) return;
+    if (!saida.data) return avisar('alerta', 'Informe a data.');
+    if (saida.data > hojeIso()) return avisar('alerta', 'A data não pode ser futura.');
+    if (saida.acao === 'inativar' && !saida.motivo) return avisar('alerta', 'Informe o motivo da saída.');
+    setMovendoCarteira(true);
+    try {
+      if (saida.acao === 'inativar') await inativarEmpresas(supabase, saida.ids, { data: saida.data, motivo: saida.motivo ?? '', observacao: saida.observacao });
+      else await reativarEmpresas(supabase, saida.ids, { data: saida.data, observacao: saida.observacao });
+      avisar(
+        'sucesso',
+        saida.acao === 'inativar'
+          ? `${saida.ids.length} empresa(s) inativada(s). O cadastro e o histórico foram preservados — veja na aba Inativas.`
+          : `${saida.ids.length} empresa(s) reativada(s) e de volta à carteira ativa.`,
+      );
+      setSaida(null);
+      setSelecionados([]);
+      setPainelAberto(false);
+      setEmpresaNoPainel(null);
+      await carregar();
+    } catch (e) {
+      avisar('erro', e instanceof Error ? e.message : 'Não foi possível concluir.');
+    } finally {
+      setMovendoCarteira(false);
+    }
+  }
 
   async function salvarPeloPainel(
     gerais: Record<string, unknown>,
@@ -730,8 +799,66 @@ export function TabelaPlanilha({
           <Botao variante="secundario" tamanho="sm" onClick={() => void marcarSelecionadosParaRevisao(false)}>
             Remover marcação
           </Botao>
+          {(() => {
+            const alvo = linhas.filter((l) => selecionados.includes(l.id));
+            const ativas = alvo.filter((l) => l.situacao !== 'inativa').map((l) => l.id);
+            const inativas = alvo.filter((l) => l.situacao === 'inativa').map((l) => l.id);
+            return (
+              <>
+                {ativas.length > 0 && (
+                  <Botao variante="secundario" tamanho="sm" onClick={() => setSaida({ acao: 'inativar', ids: ativas, data: hojeIso(), motivo: null, observacao: '' })}>
+                    <Archive className="h-3.5 w-3.5" /> Inativar {ativas.length}
+                  </Botao>
+                )}
+                {inativas.length > 0 && (
+                  <Botao variante="secundario" tamanho="sm" onClick={() => setSaida({ acao: 'reativar', ids: inativas, data: hojeIso(), motivo: null, observacao: '' })}>
+                    <RotateCcw className="h-3.5 w-3.5" /> Reativar {inativas.length}
+                  </Botao>
+                )}
+              </>
+            );
+          })()}
         </div>
       )}
+
+      {/* Carteira: ativas, inativas e os indicadores de entrada e saída */}
+      <div className="sem-impressao flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-borda bg-superficie-elevada px-5 py-2 sm:px-7">
+        <div className="flex rounded-lg border border-borda-forte bg-white p-0.5" role="tablist" aria-label="Carteira de empresas">
+          {(
+            [
+              ['ativas', 'Ativas', resumoCarteira.ativas],
+              ['inativas', 'Inativas', resumoCarteira.inativas],
+              ['todas', 'Todas', linhas.length],
+            ] as const
+          ).map(([valor, rotulo, total]) => (
+            <button
+              key={valor}
+              role="tab"
+              aria-selected={carteira === valor && !empresaFoco}
+              onClick={() => {
+                setCarteira(valor);
+                setEmpresaFoco(null);
+                setSelecionados([]);
+                setPagina(1);
+              }}
+              className={cn(
+                'flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-colors',
+                carteira === valor && !empresaFoco ? 'bg-marca-700 text-white shadow-sm' : 'text-texto-suave hover:text-texto',
+              )}
+            >
+              {rotulo}
+              <span className={cn('rounded-full px-1.5 text-[10px] tabular-nums', carteira === valor && !empresaFoco ? 'bg-white/20' : 'bg-superficie text-texto-fraco')}>{total}</span>
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-texto-suave">
+          Em {new Date().getFullYear()}: <strong className="text-sucesso">{resumoCarteira.entradasNoAno}</strong> entrada(s) ·{' '}
+          <strong className={resumoCarteira.saidasNoAno ? 'text-erro' : 'text-texto'}>{resumoCarteira.saidasNoAno}</strong> saída(s)
+        </p>
+        {carteira === 'inativas' && !empresaFoco && (
+          <p className="text-xs text-texto-fraco">Empresas que saíram da carteira. O cadastro, os documentos e o histórico continuam guardados — use “Reativar” se a empresa voltar.</p>
+        )}
+      </div>
 
       {/* Barra de navegação — no topo, junto da quantidade por página */}
       <div className="sem-impressao flex flex-wrap items-center justify-between gap-3 border-b border-borda bg-superficie px-5 py-2 text-sm sm:px-7">
@@ -1085,6 +1212,11 @@ export function TabelaPlanilha({
         colunasEquipe={colunas.filter((c) => c.personalizada)}
         resultadosFormula={empresaNoPainel ? formulas.get(empresaNoPainel.id) : undefined}
         atalhos={atalhos}
+        podeOpcoes={podeOpcoes}
+        souAdmin={souAdmin}
+        meuId={meuId}
+        aoInativar={(e) => setSaida({ acao: 'inativar', ids: [e.id], data: hojeIso(), motivo: null, observacao: '' })}
+        aoReativar={(e) => setSaida({ acao: 'reativar', ids: [e.id], data: hojeIso(), motivo: null, observacao: '' })}
         aoFechar={() => {
           setPainelAberto(false);
           setEmpresaNoPainel(null);
@@ -1198,22 +1330,62 @@ export function TabelaPlanilha({
         aberto={confirmandoExclusao}
         aoFechar={() => setConfirmandoExclusao(false)}
         aoConfirmar={() => void confirmarExclusao()}
-        titulo="Excluir empresas"
+        titulo="Excluir empresas definitivamente"
         rotuloConfirmar={`Excluir ${selecionados.length} registro(s)`}
         carregando={excluindo}
         mensagem={
           <>
             <p>
-              Você está prestes a excluir <strong>{selecionados.length}</strong> registro(s) da base de
-              Legalização. Os dados administrativos vinculados também serão removidos.
+              Você está prestes a <strong>apagar</strong> {selecionados.length} registro(s) da base de
+              Legalização, com os dados administrativos, o histórico de movimentações e os documentos.
             </p>
             <p className="mt-2">
-              A ação fica registrada na auditoria, mas <strong>não pode ser desfeita</strong> pela
-              interface.
+              Se a empresa apenas saiu da carteira, <strong>cancele e use “Inativar”</strong>: o cadastro fica
+              guardado e pode ser reativado. A exclusão é exclusiva de administradores, fica na auditoria e
+              não pode ser desfeita — use só para cadastros feitos por engano.
             </p>
           </>
         }
       />
+
+      <Modal
+        aberto={Boolean(saida)}
+        aoFechar={() => setSaida(null)}
+        largura="sm"
+        titulo={saida?.acao === 'reativar' ? `Reativar ${saida.ids.length} empresa(s)` : `Inativar ${saida?.ids.length ?? 0} empresa(s)`}
+        descricao={
+          saida?.acao === 'reativar'
+            ? 'A empresa volta para a carteira ativa. A saída anterior continua no histórico.'
+            : 'A empresa sai da carteira ativa, mas nada é apagado: cadastro, documentos e histórico ficam preservados.'
+        }
+        rodape={
+          <>
+            <Botao variante="secundario" onClick={() => setSaida(null)} disabled={movendoCarteira}>
+              Cancelar
+            </Botao>
+            <Botao onClick={() => void confirmarSaida()} carregando={movendoCarteira}>
+              {saida?.acao === 'reativar' ? 'Reativar' : 'Inativar'}
+            </Botao>
+          </>
+        }
+      >
+        {saida && (
+          <div className="space-y-3">
+            <Campo
+              rotulo={saida.acao === 'reativar' ? 'Data do retorno' : 'Data de saída'}
+              type="date"
+              value={saida.data}
+              max={hojeIso()}
+              onChange={(e) => setSaida({ ...saida, data: e.target.value })}
+            />
+            {saida.acao === 'inativar' && (
+              <CampoOpcoes grupo="empresa_motivo_saida" rotulo="Motivo da saída *" valor={saida.motivo} aoMudar={(v) => setSaida({ ...saida, motivo: v })} podeGerenciar={podeOpcoes} />
+            )}
+            <AreaTexto rotulo="Observações" rows={3} value={saida.observacao} maxLength={2000} onChange={(e) => setSaida({ ...saida, observacao: e.target.value })} placeholder="Detalhes que ajudem a entender o que aconteceu (opcional)" />
+            <p className="text-xs text-texto-fraco">A movimentação entra no histórico da empresa com a data, o motivo e quem registrou.</p>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
