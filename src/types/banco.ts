@@ -716,7 +716,7 @@ export interface DocumentoEmpresa {
 export type StatusTarefa = 'a_fazer' | 'em_andamento' | 'em_revisao' | 'concluido' | 'cancelado';
 export type PrioridadeTarefa = 'baixa' | 'normal' | 'alta' | 'urgente';
 
-export interface ItemChecklist {
+export interface ItemChecklistTarefa {
   id: string;
   texto: string;
   feito: boolean;
@@ -736,7 +736,7 @@ export interface Tarefa {
   privada: boolean;
   empresa_id: string | null;
   empresa: string | null;
-  checklist: ItemChecklist[];
+  checklist: ItemChecklistTarefa[];
   ordem: number;
   criado_por: string | null;
   criado_por_nome: string | null;
