@@ -4,23 +4,23 @@ import { cn } from '@/lib/cn';
 /**
  * Marca do PortalMPC (Meta Plano Contábil).
  *
- * A arte vem de `public/`, não do código: para usar o arquivo oficial basta
- * substituir `public/logo-metaplano.svg` (lockup completo) e
- * `public/simbolo-metaplano.svg` (só o símbolo, usado no menu recolhido).
- * Aceita .svg ou .png — se trocar a extensão, ajuste apenas as constantes
- * abaixo.
+ * A arte é o arquivo oficial enviado pela Meta Plano, sem redesenho:
+ * `public/logo-meta-plano.png` (logo completa, fundo transparente) e
+ * `public/simbolo-meta-plano.png` (o mesmo arquivo recortado acima da marca
+ * nominal, para o menu recolhido e a barra do celular). Para trocar a arte,
+ * substitua os arquivos mantendo os nomes.
  *
- * Usa <img> em vez de next/image de propósito: é um SVG estático e local,
- * sem ganho em passar pelo otimizador.
+ * Usa <img> em vez de next/image de propósito: é uma imagem estática e
+ * pequena; a proporção original é preservada (`w-auto` + `object-contain`).
  */
 
-const LOGO_COMPLETA = '/logo-metaplano.svg';
-const SIMBOLO = '/simbolo-metaplano.svg';
+const LOGO_COMPLETA = '/logo-meta-plano.png';
+const SIMBOLO = '/simbolo-meta-plano.png';
 
 const ALTURAS = {
-  sm: 'h-8',
-  md: 'h-10',
-  lg: 'h-14',
+  sm: 'h-12',
+  md: 'h-16',
+  lg: 'h-24',
 } as const;
 
 export function MarcaMPC({
@@ -40,7 +40,7 @@ export function MarcaMPC({
     <img
       src={somenteSimbolo ? SIMBOLO : LOGO_COMPLETA}
       alt="Meta Plano Contábil"
-      className={cn(ALTURAS[tamanho], 'w-auto')}
+      className={cn(somenteSimbolo && tamanho === 'sm' ? 'h-8' : ALTURAS[tamanho], 'w-auto object-contain')}
     />
   );
 

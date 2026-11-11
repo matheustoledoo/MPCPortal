@@ -163,6 +163,7 @@ export async function carregarTodasEmpresas(
       };
       todas.push({
         ...empresa,
+        saida_em: empresa.data_saida ?? null,
         campos_extras: empresa.campos_extras ?? {},
         administrativo: Array.isArray(adm) ? (adm[0] ?? null) : (adm ?? null),
       } as LinhaEmpresa);
@@ -307,4 +308,26 @@ export async function atualizarEmMassa(
     .update({ [campo]: valor })
     .in('id', ids);
   if (error) throw new Error(error.message);
+}
+
+/**
+ * Saída da carteira: a empresa fica inativa (nunca é apagada) e o banco
+ * registra a movimentação no histórico, com data, motivo e responsável.
+ */
+export async function inativarEmpresas(
+  supabase: SupabaseClient,
+  ids: string[],
+  dados: { data: string; motivo: string; observacao: string },
+): Promise<void> {
+  for (const id of ids) {
+    const { error } = await supabase.rpc('empresa_inativar', { p_empresa: id, p_data: dados.data, p_motivo: dados.motivo, p_observacao: dados.observacao || null });
+    if (error) throw new Error(error.message);
+  }
+}
+
+export async function reativarEmpresas(supabase: SupabaseClient, ids: string[], dados: { data: string; observacao: string }): Promise<void> {
+  for (const id of ids) {
+    const { error } = await supabase.rpc('empresa_reativar', { p_empresa: id, p_data: dados.data, p_observacao: dados.observacao || null });
+    if (error) throw new Error(error.message);
+  }
 }

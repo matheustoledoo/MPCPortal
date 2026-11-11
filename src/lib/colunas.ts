@@ -31,6 +31,8 @@ export interface DefinicaoColuna {
   confidencial?: boolean;
   /** Sugestões para o editor de célula. */
   opcoes?: string[];
+  /** Lista do banco (`legalizacao_opcoes.grupo`) que alimenta as opções — com "+ Adicionar outro". */
+  grupoOpcoes?: string;
   /** Visível por padrão ao abrir a planilha. */
   padrao?: boolean;
   /** Congelada à esquerda (identificação da empresa). */
@@ -61,23 +63,23 @@ export const COLUNAS_GERAIS: DefinicaoColuna[] = [
   { campo: 'codigo', rotulo: 'Código', tipo: 'texto', largura: 90, origem: 'ambas: COD', editavel: true, padrao: true },
   { campo: 'cidade', rotulo: 'Cidade', tipo: 'texto', largura: 160, origem: 'ambas: CIDADE', editavel: true, padrao: true },
   { campo: 'data_inicio', rotulo: 'Início', tipo: 'data', largura: 110, origem: 'Saúde: INICIO · ADM: INÍCIO', editavel: true, padrao: true },
-  { campo: 'status', rotulo: 'Status', tipo: 'status', largura: 110, origem: 'ADM: STATUS', editavel: true, opcoes: ['ATIVO', 'SUSPENSO', 'INATIVO', 'BAIXADO'], padrao: true },
-  { campo: 'tributacao', rotulo: 'Tributação', tipo: 'status', largura: 140, origem: 'ADM: TRIBUTAÇÃO', editavel: true, opcoes: ['SIMPLES', 'NÃO OPTANTE', 'MEI', 'LUCRO REAL', 'LUCRO PRESUMIDO', 'DOMESTICA'], padrao: true },
+  { campo: 'status', rotulo: 'Status', tipo: 'status', largura: 110, origem: 'ADM: STATUS', editavel: true, grupoOpcoes: 'empresa_status', opcoes: ['ATIVO', 'SUSPENSO', 'INATIVO', 'BAIXADO'], padrao: true },
+  { campo: 'tributacao', rotulo: 'Tributação', tipo: 'status', largura: 140, origem: 'ADM: TRIBUTAÇÃO', editavel: true, grupoOpcoes: 'empresa_tributacao', opcoes: ['SIMPLES', 'NÃO OPTANTE', 'MEI', 'LUCRO REAL', 'LUCRO PRESUMIDO', 'HÍBRIDO', 'DOMESTICA'], padrao: true },
   { campo: 'tipo', rotulo: 'Tipo', tipo: 'texto', largura: 200, origem: 'ADM: TIPO', editavel: true, padrao: true },
   { campo: 'seguimento', rotulo: 'Seguimento', tipo: 'status', largura: 160, origem: 'Saúde: SEGUIMENTO', editavel: true, padrao: true },
   { campo: 'socio', rotulo: 'Sócio', tipo: 'texto', largura: 260, origem: 'Saúde: SOCIO', editavel: true, padrao: true },
-  { campo: 'estabelecido', rotulo: 'Estabelecido', tipo: 'status', largura: 120, origem: 'Saúde: ESTABELICIDO', editavel: true, opcoes: SIM_NAO, padrao: true },
+  { campo: 'estabelecido', rotulo: 'Estabelecido', tipo: 'status', largura: 120, origem: 'Saúde: ESTABELICIDO', editavel: true, grupoOpcoes: 'empresa_estabelecido', opcoes: SIM_NAO, padrao: true },
   { campo: 'inscricao_municipal', rotulo: 'Insc. Municipal', tipo: 'texto', largura: 150, origem: 'Saúde: INS. MUNICIPAL', editavel: true, padrao: true },
-  { campo: 'alvara', rotulo: 'Alvará', tipo: 'status', largura: 100, origem: 'Saúde: ALVARÁ', editavel: true, opcoes: SIM_NAO, padrao: true },
-  { campo: 'avcb_clcb', rotulo: 'AVCB / CLCB', tipo: 'status', largura: 130, origem: 'Saúde: AVCB / CLCB', editavel: true, opcoes: DOCUMENTO, padrao: true },
+  { campo: 'alvara', rotulo: 'Alvará', tipo: 'status', largura: 100, origem: 'Saúde: ALVARÁ', editavel: true, grupoOpcoes: 'empresa_alvara', opcoes: SIM_NAO, padrao: true },
+  { campo: 'avcb_clcb', rotulo: 'AVCB / CLCB', tipo: 'status', largura: 130, origem: 'Saúde: AVCB / CLCB', editavel: true, grupoOpcoes: 'empresa_avcb_clcb', opcoes: DOCUMENTO, padrao: true },
   { campo: 'avcb_clcb_validade', rotulo: 'Validade AVCB', tipo: 'data', largura: 130, origem: 'Saúde: AVCB / CLCB (datas)', editavel: true, padrao: false },
-  { campo: 'lta', rotulo: 'LTA', tipo: 'status', largura: 100, origem: 'Saúde: LTA', editavel: true, opcoes: DOCUMENTO, padrao: true },
-  { campo: 'cnes', rotulo: 'CNES', tipo: 'status', largura: 100, origem: 'Saúde: CNES', editavel: true, opcoes: DOCUMENTO, padrao: true },
-  { campo: 'cetesb', rotulo: 'CETESB', tipo: 'status', largura: 110, origem: 'Saúde: CETESB', editavel: true, opcoes: DOCUMENTO, padrao: true },
-  { campo: 'amlurb_tx_lixo', rotulo: 'AMLURB (TX Lixo)', tipo: 'status', largura: 150, origem: 'Saúde: AMLURB (TX LIXO)', editavel: true, opcoes: DOCUMENTO, padrao: true },
-  { campo: 'vigilancia_sanitaria', rotulo: 'Vigilância Sanitária', tipo: 'status', largura: 170, origem: 'Saúde: VIGILÂNCIA SANITÁRIA', editavel: true, opcoes: DOCUMENTO, padrao: true },
+  { campo: 'lta', rotulo: 'LTA', tipo: 'status', largura: 100, origem: 'Saúde: LTA', editavel: true, grupoOpcoes: 'empresa_lta', opcoes: DOCUMENTO, padrao: true },
+  { campo: 'cnes', rotulo: 'CNES', tipo: 'status', largura: 100, origem: 'Saúde: CNES', editavel: true, grupoOpcoes: 'empresa_cnes', opcoes: DOCUMENTO, padrao: true },
+  { campo: 'cetesb', rotulo: 'CETESB', tipo: 'status', largura: 110, origem: 'Saúde: CETESB', editavel: true, grupoOpcoes: 'empresa_cetesb', opcoes: DOCUMENTO, padrao: true },
+  { campo: 'amlurb_tx_lixo', rotulo: 'AMLURB (TX Lixo)', tipo: 'status', largura: 150, origem: 'Saúde: AMLURB (TX LIXO)', editavel: true, grupoOpcoes: 'empresa_amlurb_tx_lixo', opcoes: DOCUMENTO, padrao: true },
+  { campo: 'vigilancia_sanitaria', rotulo: 'Vigilância Sanitária', tipo: 'status', largura: 170, origem: 'Saúde: VIGILÂNCIA SANITÁRIA', editavel: true, grupoOpcoes: 'empresa_vigilancia_sanitaria', opcoes: DOCUMENTO, padrao: true },
   { campo: 'vigilancia_sanitaria_validade', rotulo: 'Validade VISA', tipo: 'data', largura: 130, origem: 'Saúde: VIGILÂNCIA SANITÁRIA (datas)', editavel: true, padrao: false },
-  { campo: 'extramuros', rotulo: 'Extramuros', tipo: 'status', largura: 120, origem: 'Saúde: EXTRAMUROS', editavel: true, opcoes: DOCUMENTO, padrao: true },
+  { campo: 'extramuros', rotulo: 'Extramuros', tipo: 'status', largura: 120, origem: 'Saúde: EXTRAMUROS', editavel: true, grupoOpcoes: 'empresa_extramuros', opcoes: DOCUMENTO, padrao: true },
   { campo: 'responsavel_tecnico', rotulo: 'Responsável Técnico', tipo: 'texto', largura: 240, origem: 'Saúde: RESPONSÁVEL TÉCNICO', editavel: true, padrao: true },
   { campo: 'profissional', rotulo: 'Profissional', tipo: 'status', largura: 160, origem: 'Saúde: PROFISSIONAL', editavel: true, padrao: true },
   { campo: 'orgao', rotulo: 'Órgão', tipo: 'status', largura: 110, origem: 'Saúde: ÓRGÃO', editavel: true, padrao: true },
@@ -86,6 +88,10 @@ export const COLUNAS_GERAIS: DefinicaoColuna[] = [
   { campo: 'observacoes', rotulo: 'Observações', tipo: 'longo', largura: 260, origem: 'PortalMPC', editavel: true, padrao: false },
   // Aviso vindo do Controle Legalização. Não é editável aqui: o número sai
   // do gatilho que conta os processos abertos daquela empresa.
+  // Carteira: mantidos pelo banco (inativar/reativar), por isso não são editáveis na célula.
+  { campo: 'situacao', rotulo: 'Carteira', tipo: 'status', largura: 110, origem: 'PortalMPC: ativa ou inativa', editavel: false, padrao: false },
+  { campo: 'saida_em', rotulo: 'Saída da carteira', tipo: 'data', largura: 150, origem: 'PortalMPC: data em que deixou a carteira', editavel: false, padrao: false },
+  { campo: 'motivo_saida', rotulo: 'Motivo da saída', tipo: 'texto', largura: 220, origem: 'PortalMPC', editavel: false, padrao: false },
   { campo: 'processos_abertos', rotulo: 'Processos', tipo: 'processos', largura: 130, origem: 'Controle Legalização', editavel: false, padrao: true },
   { campo: 'origem', rotulo: 'Origem', tipo: 'status', largura: 140, origem: 'Rastreabilidade da importação', editavel: false, padrao: true },
   { campo: 'necessita_revisao', rotulo: 'Revisão', tipo: 'booleano', largura: 100, origem: 'Validação automática', editavel: true, padrao: true },
@@ -99,11 +105,14 @@ export const COLUNAS_ADMINISTRATIVAS: DefinicaoColuna[] = [
   { campo: 'competencia_label', rotulo: 'Competência', tipo: 'texto', largura: 120, origem: 'ADM: cabeçalho da competência', editavel: false, confidencial: true, padrao: true },
   { campo: 'dia_vencimento', rotulo: 'Dia Vencimento', tipo: 'numero', largura: 130, origem: 'ADM: DATA DE VENCIM.', editavel: true, confidencial: true, padrao: true },
   { campo: 'observacoes_honorarios', rotulo: 'Condições de honorários', tipo: 'longo', largura: 320, origem: 'ADM: OBS.', editavel: true, confidencial: true, padrao: true },
-  { campo: 'data_saida', rotulo: 'Saída', tipo: 'data', largura: 110, origem: 'ADM: SAÍDA', editavel: true, confidencial: true, padrao: true },
+  { campo: 'data_saida', rotulo: 'Saída (ADM)', tipo: 'data', largura: 120, origem: 'ADM: SAÍDA', editavel: true, confidencial: true, padrao: true },
   { campo: 'observacoes_internas', rotulo: 'Observações internas', tipo: 'longo', largura: 280, origem: 'PortalMPC', editavel: true, confidencial: true, padrao: false },
 ];
 
 export const TODAS_COLUNAS = [...COLUNAS_GERAIS, ...COLUNAS_ADMINISTRATIVAS];
+
+/** Listas do banco usadas pelas colunas nativas (tributação, status, licenças…). */
+export const GRUPOS_OPCOES_EMPRESA = COLUNAS_GERAIS.filter((c) => c.grupoOpcoes).map((c) => c.grupoOpcoes as string);
 
 /** Colunas disponíveis para o perfil informado — a base da proteção na interface. */
 export function colunasPara(podeVerAdministrativo: boolean): DefinicaoColuna[] {

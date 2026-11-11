@@ -126,7 +126,39 @@ Calendário (Reunião de Integração) ──(?evento=)───▶ Integração
 Integração ───────────────────────────────────────▶ evento no calendário · empresa na planilha
 Notificações (sino) ──(link de cada aviso)────────▶ o item exato (?item=, ?processo=, post…)
 Busca global (Ctrl+K) ────────────────────────────▶ empresa, processo, pessoa, cidade, post
+Tarefas · Processos · Prospecção · Integração · Atribuições · validades da empresa
+        └──(gatilho → agenda_publicar)──▶ calendario_eventos ──▶ Calendário · Início · sino
+Calendário ("Abrir em…" / concluir) ──(link · agenda_concluir)──▶ o registro de origem
 ```
+
+### Serviços centrais (um só de cada)
+
+| Serviço | Onde mora | Quem usa |
+| --- | --- | --- |
+| **Agenda** | `calendario_eventos` + `agenda_publicar()` / `agenda_remover()` / `agenda_concluir()` | todo módulo que tem data |
+| **Notificações** | `notificar()` + `sincronizar_minhas_notificacoes()` | gatilhos de todos os módulos |
+| **Permissões** | `permissoes_catalogo` + `tem_permissao()` · `src/lib/permissoes.ts` | RLS, menu e guardas de página |
+| **Opções** | `legalizacao_opcoes` + `opcoes_grupos` · `useOpcoes` / `CampoOpcoes` | todo campo de seleção |
+| **Arquivos** | bucket privado `arquivos` + `arquivo_acesso()` · `src/lib/arquivos.ts` | chat, tarefas, conhecimento, empresas |
+| **Auditoria** | gatilho `registrar_auditoria()` | tabelas de negócio |
+| **Histórico da empresa** | `empresa_movimentacoes` (só inserção) | planilha e painel da empresa |
+
+Para um módulo novo entrar no calendário basta um gatilho na tabela dele chamando
+`agenda_publicar(modulo, tabela, id, título, data, …)`: a chave única
+`(origem_tabela, origem_id, origem_chave)` faz o resto (cria, atualiza, não duplica). Nenhuma
+tela escreve eventos de outro módulo direto no calendário — a política de RLS só aceita
+escrita direta quando `modulo = 'calendario'`.
+
+`status_na_origem` diz de quem é a situação: quando verdadeiro, concluir é assunto do módulo
+de origem (o calendário chama `agenda_concluir`, que atualiza a tarefa ou a ação); quando
+falso (validade de documento, por exemplo), a conclusão é marcada no próprio calendário.
+
+### Ferramentas: regras fora do código
+
+`src/lib/ferramentas/calculos.ts` só conhece a mecânica (funções puras, testadas com valores
+conhecidos); `definicoes.ts` descreve campos, passo a passo e limitações; os números moram em
+`ferramentas_tabelas`, por `chave` e `vigencia_inicio`. Atualizar uma alíquota é criar uma
+vigência nova pela tela — sem deploy.
 
 Os avisos nascem no banco (gatilhos + `sincronizar_minhas_notificacoes()`), então qualquer
 tela que grava algo no nome de alguém já notifica, sem código extra no front.

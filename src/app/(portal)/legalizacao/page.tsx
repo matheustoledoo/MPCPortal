@@ -9,6 +9,7 @@ import { responsaveisPorColuna } from '@/lib/atribuicoes';
 import { COLUNAS_GERAIS } from '@/lib/colunas';
 import {
   PERMISSOES,
+  ehAdmin,
   pode,
   podeCriarEmpresas,
   podeEditarLegalizacao,
@@ -66,10 +67,13 @@ export default async function PaginaLegalizacao({
         podeVerAdministrativo={false}
         podeEditar={podeEditarLegalizacao(perfil)}
         podeCriar={podeCriarEmpresas(perfil)}
-        podeExcluir={podeExcluirLegalizacao(perfil)}
+        podeExcluir={ehAdmin(perfil) && podeExcluirLegalizacao(perfil)}
         podeExportar={pode(perfil, PERMISSOES.exportarLegalizacao)}
         podeImportar={pode(perfil, PERMISSOES.importarLegalizacao)}
         podePersonalizarColunas={pode(perfil, PERMISSOES.personalizarColunas)}
+        podeOpcoes={pode(perfil, PERMISSOES.gerenciarOpcoes)}
+        souAdmin={ehAdmin(perfil)}
+        meuId={perfil.id}
         atalhos={{
           processos: pode(perfil, PERMISSOES.telaProcessos),
           integracao: pode(perfil, PERMISSOES.telaIntegracao),

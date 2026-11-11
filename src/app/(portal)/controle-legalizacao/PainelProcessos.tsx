@@ -199,15 +199,16 @@ export function PainelProcessos({
     setDefinicoes((data ?? []) as PlanilhaColuna[]);
   }
 
+  /** "+ Adicionar outro": passa pela função central, que normaliza e evita duplicata. */
   async function adicionarOpcao(grupo: string, valor: string) {
-    const proxima = (opcoes[grupo]?.length ?? 0) + 1;
-    const { error } = await supabase.from('legalizacao_opcoes').insert({ grupo, valor, ordem: proxima });
+    const { data, error } = await supabase.rpc('opcao_adicionar', { p_grupo: grupo, p_valor: valor });
     if (error) {
       avisar('erro', `Não foi possível guardar a opção: ${error.message}`);
-      return;
+      throw new Error(error.message);
     }
-    setOpcoes((atuais) => ({ ...atuais, [grupo]: [...(atuais[grupo] ?? []), valor] }));
-    avisar('sucesso', `“${valor}” entrou na lista do time.`);
+    const salvo = String(data ?? valor);
+    setOpcoes((atuais) => ({ ...atuais, [grupo]: (atuais[grupo] ?? []).includes(salvo) ? (atuais[grupo] ?? []) : [...(atuais[grupo] ?? []), salvo] }));
+    avisar('sucesso', `“${salvo}” entrou na lista do time.`);
   }
 
   function abrirProcesso(processo: Processo) {

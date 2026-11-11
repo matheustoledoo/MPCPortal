@@ -281,7 +281,7 @@ export function ItemNotificacao({
             className="h-7 w-7 text-sucesso hover:bg-sucesso-suave"
             onClick={() => aoAgir('concluir')}
             aria-label="Concluir"
-            title={acaoDeOrigem(n) === 'calendario' ? 'Marcar a obrigação como concluída' : acaoDeOrigem(n) === 'atribuicao' ? 'Concluir o ciclo da atribuição' : 'Marcar como resolvida'}
+            title={acaoDeOrigem(n) === 'calendario' ? 'Marcar a obrigação como concluída' : acaoDeOrigem(n) === 'agenda' ? 'Concluir na origem (tarefa, ação…)' : acaoDeOrigem(n) === 'atribuicao' ? 'Concluir o ciclo da atribuição' : 'Marcar como resolvida'}
           >
             <Check className="h-4 w-4" />
           </Botao>

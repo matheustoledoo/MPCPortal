@@ -52,6 +52,11 @@ export const PERMISSOES = {
   telaForum: 'tela.forum',
   telaCalendario: 'tela.calendario',
   telaIntegracao: 'tela.integracao',
+  telaTarefas: 'tela.tarefas',
+  telaProspeccao: 'tela.prospeccao',
+  telaChat: 'tela.chat',
+  telaConhecimento: 'tela.conhecimento',
+  telaFerramentas: 'tela.ferramentas',
   telaFiscal: 'tela.fiscal',
   telaContabil: 'tela.contabil',
   telaDp: 'tela.dp',
@@ -81,6 +86,13 @@ export const PERMISSOES = {
   excluirIntegracao: 'dados.integracao.excluir',
   moderarForum: 'dados.forum.moderar',
 
+  gerenciarTarefas: 'dados.tarefas.gerenciar',
+  editarProspeccao: 'dados.prospeccao.editar',
+  excluirProspeccao: 'dados.prospeccao.excluir',
+  editarConhecimento: 'dados.conhecimento.editar',
+  excluirConhecimento: 'dados.conhecimento.excluir',
+  tabelasFerramentas: 'dados.ferramentas.tabelas',
+
   gerenciarUsuarios: 'admin.usuarios.gerenciar',
   concederPermissoes: 'admin.usuarios.permissoes',
   gerenciarAtribuicoes: 'admin.atribuicoes.gerenciar',
@@ -94,6 +106,10 @@ export const PERMISSOES_SOMENTE_ADMIN: string[] = [
   PERMISSOES.editarAdministrativo,
   PERMISSOES.exportarAdministrativo,
   PERMISSOES.importarAdministrativo,
+  // Estrutura da planilha (criar, renomear, ocultar ou excluir colunas) é
+  // decisão do administrador — diferente de editar os registros.
+  PERMISSOES.personalizarColunas,
+  PERMISSOES.tabelasFerramentas,
 ];
 
 /* -------------------------------------------------------------------------- */
@@ -151,6 +167,11 @@ export function podeVerAuditoria(perfil: Usuario): boolean {
   return pode(perfil, PERMISSOES.telaAuditoria);
 }
 
+/** Estrutura da planilha: só o administrador (o banco exige o mesmo). */
+export function podeAlterarEstruturaDaPlanilha(perfil: Usuario): boolean {
+  return ehAdmin(perfil);
+}
+
 /* --- Controle Geral (processos) ------------------------------------------ */
 
 export function podeLerProcessos(perfil: Usuario): boolean {
@@ -203,6 +224,11 @@ export const ROTAS_PROTEGIDAS: { rota: string; permissao: string }[] = [
   { rota: '/forum', permissao: PERMISSOES.telaForum },
   { rota: '/calendario', permissao: PERMISSOES.telaCalendario },
   { rota: '/integracao-clientes', permissao: PERMISSOES.telaIntegracao },
+  { rota: '/tarefas', permissao: PERMISSOES.telaTarefas },
+  { rota: '/prospeccao', permissao: PERMISSOES.telaProspeccao },
+  { rota: '/chat', permissao: PERMISSOES.telaChat },
+  { rota: '/conhecimento', permissao: PERMISSOES.telaConhecimento },
+  { rota: '/ferramentas', permissao: PERMISSOES.telaFerramentas },
   { rota: '/usuarios', permissao: PERMISSOES.gerenciarUsuarios },
   { rota: '/auditoria', permissao: PERMISSOES.telaAuditoria },
   { rota: '/configuracoes', permissao: PERMISSOES.telaConfiguracoes },

@@ -33,6 +33,10 @@ function sugestaoPara(area: Area, role: Role): string[] {
     PERMISSOES.telaAtribuicoes as string,
     PERMISSOES.telaForum as string,
     PERMISSOES.telaCalendario as string,
+    PERMISSOES.telaTarefas as string,
+    PERMISSOES.telaChat as string,
+    PERMISSOES.telaConhecimento as string,
+    PERMISSOES.telaFerramentas as string,
   ];
 
   const porArea: Record<Area, string[]> = {
@@ -47,7 +51,7 @@ function sugestaoPara(area: Area, role: Role): string[] {
     contabil: [PERMISSOES.telaContabil],
     departamento_pessoal: [PERMISSOES.telaDp],
     qualidade: [PERMISSOES.telaIntegracao],
-    administracao: [PERMISSOES.telaDashboard],
+    administracao: [PERMISSOES.telaDashboard, PERMISSOES.telaProspeccao, PERMISSOES.editarProspeccao],
   };
 
   const porRole: string[] =

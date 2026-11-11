@@ -33,25 +33,26 @@ export default async function PaginaLogin({
           }}
           aria-hidden
         />
-        <MarcaMPC tamanho="md" invertido />
+        <MarcaMPC tamanho="lg" invertido />
 
         <div className="relative max-w-lg">
           <h1 className="text-4xl font-semibold leading-tight tracking-tight">
             A gestão do escritório em um só lugar.
           </h1>
           <p className="mt-5 text-base leading-relaxed text-marca-100">
-            O PortalMPC substitui as planilhas de trabalho por uma base única, com histórico de
-            alterações, controle de acesso por área e permissões aplicadas no próprio banco de dados.
+            O PortalMPC reúne a rotina da Meta Plano: carteira de clientes, calendário de obrigações,
+            tarefas, mensagens, prospecção e base de conhecimento — com histórico de alterações e
+            permissões aplicadas no próprio banco de dados.
           </p>
 
           <dl className="mt-10 grid grid-cols-3 gap-6 border-t border-white/15 pt-8">
             <div>
-              <dt className="text-xs uppercase tracking-wide text-marca-200">Módulo ativo</dt>
-              <dd className="mt-1 text-lg font-semibold">Legalização</dd>
+              <dt className="text-xs uppercase tracking-wide text-marca-200">Agenda</dt>
+              <dd className="mt-1 text-lg font-semibold">Centralizada</dd>
             </div>
             <div>
-              <dt className="text-xs uppercase tracking-wide text-marca-200">Áreas previstas</dt>
-              <dd className="mt-1 text-lg font-semibold">5</dd>
+              <dt className="text-xs uppercase tracking-wide text-marca-200">Acesso</dt>
+              <dd className="mt-1 text-lg font-semibold">Por permissão</dd>
             </div>
             <div>
               <dt className="text-xs uppercase tracking-wide text-marca-200">Auditoria</dt>

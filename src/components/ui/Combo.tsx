@@ -2,7 +2,7 @@
 
 import { useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 
-import { Check, ChevronDown, PenLine, Plus, X } from 'lucide-react';
+import { Check, ChevronDown, Lock, PenLine, Plus, Trash2, X } from 'lucide-react';
 
 import { Popover } from '@/components/ui/Popover';
 import { cn } from '@/lib/cn';
@@ -38,6 +38,9 @@ export interface PropsCombo {
   tamanho?: 'sm' | 'md';
   /** Cor de fundo do campo conforme o valor (ex.: status). */
   classeValor?: string;
+  /** Opções personalizadas que podem ser excluídas (as padrão ficam protegidas). */
+  opcoesExcluiveis?: string[];
+  aoExcluirOpcao?: (valor: string) => void;
 }
 
 export function Combo({
@@ -55,6 +58,8 @@ export function Combo({
   autoFocus,
   tamanho = 'md',
   classeValor,
+  opcoesExcluiveis,
+  aoExcluirOpcao,
 }: PropsCombo) {
   const id = useId();
   const [aberto, setAberto] = useState(false);
@@ -126,8 +131,12 @@ export function Combo({
     } else if (evento.key === 'Enter') {
       evento.preventDefault();
       if (modoOutro && textoNovo) {
-        aoMudar(textoNovo);
-        fechar();
+        // "+ Adicionar outro": a opção nova fica salva na lista, para todos.
+        if (aoAdicionarOpcao && ehNovo) void guardarOpcao();
+        else {
+          aoMudar(textoNovo);
+          fechar();
+        }
       } else if (aberto && total > 0) escolher(destacado);
       else if (permiteLivre && textoNovo) {
         aoMudar(textoNovo);
@@ -156,7 +165,7 @@ export function Combo({
           ref={entrada}
           autoFocus={autoFocus}
           value={aberto ? busca : (valor ?? '')}
-          placeholder={modoOutro ? 'Digite o valor e tecle Enter' : valor ? valor : placeholder}
+          placeholder={modoOutro ? (aoAdicionarOpcao ? 'Digite a nova opção e tecle Enter' : 'Digite o valor e tecle Enter') : valor ? valor : placeholder}
           disabled={desabilitado}
           onFocus={() => {
             setAberto(true);
@@ -214,12 +223,14 @@ export function Combo({
           {modoOutro && (
             <li className="flex items-center gap-2 border-b border-borda bg-marca-50/60 px-3 py-2 text-xs text-marca-800">
               <PenLine className="h-3.5 w-3.5 shrink-0" />
-              Digite no campo acima o valor que quiser e tecle Enter.
+              {aoAdicionarOpcao
+                ? 'Digite a nova opção no campo acima e tecle Enter. Ela fica salva na lista para todos.'
+                : 'Digite no campo acima o valor que quiser e tecle Enter.'}
             </li>
           )}
 
           {filtradas.map((opcao, indice) => (
-            <li key={opcao} role="option" aria-selected={opcao === valor}>
+            <li key={opcao} role="option" aria-selected={opcao === valor} className="group/op relative">
               <button
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
@@ -231,8 +242,31 @@ export function Combo({
                 )}
               >
                 <Check className={cn('h-3.5 w-3.5 shrink-0', opcao === valor ? 'text-marca-600' : 'invisible')} />
-                <span className="truncate">{opcao}</span>
+                <span className={cn('truncate', aoExcluirOpcao && 'pr-6')}>{opcao}</span>
               </button>
+              {aoExcluirOpcao &&
+                (opcoesExcluiveis?.includes(opcao) ? (
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      fechar();
+                      aoExcluirOpcao(opcao);
+                    }}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-texto-fraco opacity-0 transition hover:bg-erro-suave hover:text-erro focus:opacity-100 group-hover/op:opacity-100"
+                    aria-label={`Excluir a opção ${opcao}`}
+                    title="Excluir esta opção personalizada"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                ) : (
+                  <span
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-texto-fraco/50 opacity-0 group-hover/op:opacity-100"
+                    title="Opção padrão do sistema — não pode ser excluída"
+                  >
+                    <Lock className="h-3 w-3" />
+                  </span>
+                ))}
             </li>
           ))}
 
@@ -287,9 +321,19 @@ export function Combo({
                   destacado === indiceOutro ? 'bg-marca-50 text-marca-800' : 'text-texto-suave hover:bg-superficie',
                 )}
               >
-                <PenLine className="h-3.5 w-3.5 shrink-0 text-marca-600" />
-                <span className="font-medium">Outro…</span>
-                <span className="text-[11px] text-texto-fraco">escrever um valor fora da lista</span>
+                {aoAdicionarOpcao ? (
+                  <>
+                    <Plus className="h-3.5 w-3.5 shrink-0 text-marca-600" />
+                    <span className="font-medium text-marca-800">Adicionar outro</span>
+                    <span className="text-[11px] text-texto-fraco">nova opção, salva para todos</span>
+                  </>
+                ) : (
+                  <>
+                    <PenLine className="h-3.5 w-3.5 shrink-0 text-marca-600" />
+                    <span className="font-medium">Outro…</span>
+                    <span className="text-[11px] text-texto-fraco">escrever um valor fora da lista</span>
+                  </>
+                )}
               </button>
             </li>
           )}

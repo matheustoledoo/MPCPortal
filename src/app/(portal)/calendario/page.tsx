@@ -7,10 +7,10 @@ import { PERMISSOES, pode } from '@/lib/permissoes';
 import { criarClienteServidor, obterPerfilAtual } from '@/lib/supabase/server';
 import type { Departamento, EventoCalendario, RegraCalendario } from '@/types/banco';
 
-export const metadata = { title: 'Calendário de Obrigações' };
+export const metadata = { title: 'Calendário' };
 
-type Aba = 'painel' | 'cal' | 'lista' | 'regras';
-const ABAS: Aba[] = ['painel', 'cal', 'lista', 'regras'];
+type Aba = 'painel' | 'cal' | 'semana' | 'dia' | 'lista' | 'regras';
+const ABAS: Aba[] = ['painel', 'cal', 'semana', 'dia', 'lista', 'regras'];
 
 /**
  * Calendário de Obrigações. A RLS decide o que chega: quem não tem
@@ -52,11 +52,11 @@ export default async function PaginaCalendario({
   return (
     <>
       <CabecalhoPagina
-        titulo="Calendário de Obrigações"
+        titulo="Calendário"
         descricao={
           todos
-            ? 'Obrigações fixas, compromissos, demandas e reuniões de todos os departamentos — com vencimento em dia útil, feriados e responsável.'
-            : `Obrigações, demandas e reuniões de ${meuDepartamento}. Marque como concluído com um clique.`
+            ? 'A agenda central do escritório: obrigações do e-Conet, compromissos, tarefas, prazos da legalização, integrações e ações de prospecção — por dia, semana ou mês.'
+            : `Sua agenda e a de ${meuDepartamento}: obrigações, tarefas, prazos e reuniões em um só lugar.`
         }
       />
       <div className="p-5 sm:p-7">
