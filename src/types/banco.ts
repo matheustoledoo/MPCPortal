@@ -64,6 +64,10 @@ export interface Empresa {
   tributacao: string | null;
   tipo: string | null;
   status: string;
+  /** Carteira (migration 0026): a empresa que sai fica inativa, nunca é apagada. */
+  situacao: 'ativa' | 'inativa';
+  data_saida: string | null;
+  motivo_saida: string | null;
 
   origem: OrigemRegistro;
   numero_origem_saude: number | null;
@@ -564,8 +568,15 @@ export interface RegraCalendario {
   sabado_util: boolean;
   responsavel_id: string | null;
   responsavel_nome: string | null;
+  /** 'econet' = obrigação legal do calendário anual e-Conet; 'equipe' = criada pelo time. */
+  fonte?: 'econet' | 'equipe';
+  conferido_em?: string | null;
   updated_at?: string;
 }
+
+export type ModuloAgenda =
+  | 'calendario' | 'obrigacoes' | 'tarefas' | 'processos' | 'atribuicoes' | 'integracao' | 'documentos' | 'prospeccao';
+export type StatusAgenda = 'pendente' | 'concluido' | 'cancelado';
 
 export interface EventoCalendario {
   id: string;
@@ -588,6 +599,16 @@ export interface EventoCalendario {
   contato: string | null;
   modalidade: string | null;
   notas: string;
+  /** Agenda central (migration 0025): quem publicou o evento e para onde ele leva. */
+  modulo?: ModuloAgenda;
+  origem_tabela?: string | null;
+  origem_id?: string | null;
+  link?: string | null;
+  status?: StatusAgenda;
+  participantes?: string[];
+  privado?: boolean;
+  hora_fim?: string | null;
+  status_na_origem?: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -631,4 +652,360 @@ export interface ResumoIntegracao {
   finalizado_em: string | null;
   finalizado_por: string | null;
   atendido_por: string | null;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Opções reutilizáveis (migration 0024)                                       */
+/* -------------------------------------------------------------------------- */
+
+export interface OpcaoLista {
+  id: string;
+  grupo: string;
+  valor: string;
+  ordem: number;
+  ativo: boolean;
+  /** Opção de fábrica: não pode ser excluída. */
+  padrao: boolean;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Empresas: movimentações e documentos (migration 0026)                       */
+/* -------------------------------------------------------------------------- */
+
+export interface AnexoArquivo {
+  caminho: string;
+  nome: string;
+  tipo: string | null;
+  tamanho: number | null;
+}
+
+export interface MovimentacaoEmpresa {
+  id: string;
+  empresa_id: string;
+  tipo: string;
+  data_ocorrencia: string;
+  descricao: string;
+  situacao_anterior: string | null;
+  nova_situacao: string | null;
+  campo: string | null;
+  automatica: boolean;
+  anexos: AnexoArquivo[];
+  registrado_por: string | null;
+  registrado_por_nome: string | null;
+  registrado_em: string;
+}
+
+export interface DocumentoEmpresa {
+  id: string;
+  empresa_id: string;
+  movimentacao_id: string | null;
+  nome: string;
+  caminho: string;
+  tipo: string | null;
+  tamanho: number | null;
+  categoria: string | null;
+  enviado_por: string | null;
+  enviado_por_nome: string | null;
+  created_at: string;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Tarefas e lembretes (migration 0027)                                        */
+/* -------------------------------------------------------------------------- */
+
+export type StatusTarefa = 'a_fazer' | 'em_andamento' | 'em_revisao' | 'concluido' | 'cancelado';
+export type PrioridadeTarefa = 'baixa' | 'normal' | 'alta' | 'urgente';
+
+export interface ItemChecklist {
+  id: string;
+  texto: string;
+  feito: boolean;
+}
+
+export interface Tarefa {
+  id: string;
+  titulo: string;
+  descricao: string;
+  tipo: 'tarefa' | 'lembrete';
+  status: StatusTarefa;
+  prioridade: PrioridadeTarefa;
+  categoria: string | null;
+  vencimento: string | null;
+  hora: string | null;
+  responsaveis: string[];
+  privada: boolean;
+  empresa_id: string | null;
+  empresa: string | null;
+  checklist: ItemChecklist[];
+  ordem: number;
+  criado_por: string | null;
+  criado_por_nome: string | null;
+  concluida_em: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ComentarioTarefa {
+  id: string;
+  tarefa_id: string;
+  autor_id: string | null;
+  autor_nome: string | null;
+  texto: string;
+  created_at: string;
+}
+
+export interface AnexoTarefa {
+  id: string;
+  tarefa_id: string;
+  nome: string;
+  caminho: string;
+  tipo: string | null;
+  tamanho: number | null;
+  enviado_por: string | null;
+  enviado_por_nome: string | null;
+  created_at: string;
+}
+
+export interface HistoricoTarefa {
+  id: string;
+  tarefa_id: string;
+  autor_id: string | null;
+  autor_nome: string | null;
+  acao: string;
+  de: string | null;
+  para: string | null;
+  created_at: string;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Prospecção — CRM (migration 0028)                                           */
+/* -------------------------------------------------------------------------- */
+
+export interface EtapaProspeccao {
+  id: string;
+  nome: string;
+  ordem: number;
+  cor: string;
+  tipo: 'aberta' | 'ganha' | 'perdida';
+  ativo: boolean;
+}
+
+export interface Lead {
+  id: string;
+  empresa: string;
+  cnpj: string | null;
+  segmento: string | null;
+  contato: string | null;
+  telefone: string | null;
+  whatsapp: string | null;
+  email: string | null;
+  cidade: string | null;
+  uf: string | null;
+  origem: string | null;
+  responsavel_id: string | null;
+  data_entrada: string;
+  observacoes: string;
+  etapa_id: string;
+  etapa_desde: string;
+  valor_estimado: number | null;
+  motivo_perda: string | null;
+  ultimo_contato_em: string | null;
+  proxima_acao_em: string | null;
+  convertido_em: string | null;
+  perdido_em: string | null;
+  empresa_id: string | null;
+  ordem: number;
+  criado_por: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type TipoAtividadeLead = 'ligacao' | 'whatsapp' | 'email' | 'reuniao' | 'visita' | 'proposta' | 'nota' | 'etapa';
+
+export interface AtividadeLead {
+  id: string;
+  lead_id: string;
+  tipo: TipoAtividadeLead;
+  descricao: string;
+  data: string;
+  hora: string | null;
+  agendada: boolean;
+  concluida: boolean;
+  concluida_em: string | null;
+  resultado: string | null;
+  valor: number | null;
+  responsavel_id: string | null;
+  criado_por: string | null;
+  criado_por_nome: string | null;
+  created_at: string;
+}
+
+export interface IndicadoresProspeccao {
+  total: number;
+  em_aberto: number;
+  novos: number;
+  convertidos: number;
+  perdidos: number;
+  valor_ganho: number;
+  valor_em_aberto: number;
+  taxa_conversao: number | null;
+  funil: { etapa_id: string; nome: string; cor: string; tipo: string; total: number; valor: number }[];
+  por_responsavel: { id: string | null; nome: string; leads: number; em_aberto: number; convertidos: number; perdidos: number }[];
+  por_origem: { rotulo: string; total: number; convertidos: number }[];
+  por_mes: { mes: string; novos: number; convertidos: number; perdidos: number }[];
+  motivos_perda: { rotulo: string; total: number }[];
+  pendentes: number;
+  atrasadas: number;
+  sem_proxima_acao: number;
+  proximos: { id: string; lead_id: string; empresa: string; tipo: string; descricao: string; data: string; hora: string | null; responsavel: string | null }[];
+}
+
+/* -------------------------------------------------------------------------- */
+/* Mensagens internas (migration 0029)                                         */
+/* -------------------------------------------------------------------------- */
+
+export interface ParticipanteChat {
+  id: string;
+  nome: string;
+  apelido: string | null;
+  avatar_path: string | null;
+  area: Area | null;
+  cargo: string | null;
+  papel: 'admin' | 'membro';
+  ativo: boolean;
+}
+
+export interface ConversaChat {
+  id: string;
+  tipo: 'direta' | 'grupo';
+  nome: string | null;
+  departamento: string | null;
+  criado_por: string | null;
+  ultima_mensagem_em: string;
+  ultima_mensagem_resumo: string | null;
+  ultima_mensagem_autor: string | null;
+  nao_lidas: number;
+  meu_papel: 'admin' | 'membro';
+  participantes: ParticipanteChat[];
+}
+
+export interface MensagemChat {
+  id: string;
+  conversa_id: string;
+  autor_id: string | null;
+  texto: string;
+  anexos: AnexoArquivo[];
+  resposta_a: string | null;
+  editada_em: string | null;
+  excluida_em: string | null;
+  created_at: string;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Aprendizagem e procedimentos (migration 0030)                               */
+/* -------------------------------------------------------------------------- */
+
+export interface CategoriaConhecimento {
+  id: string;
+  nome: string;
+  descricao: string | null;
+  pai_id: string | null;
+  departamento: string | null;
+  ordem: number;
+}
+
+export type TipoBloco = 'titulo' | 'texto' | 'destaque' | 'imagem' | 'video' | 'link';
+
+export interface BlocoConteudo {
+  id: string;
+  tipo: TipoBloco;
+  texto?: string;
+  /** destaque: 'info' | 'atencao' | 'importante' */
+  tom?: 'info' | 'atencao' | 'importante';
+  /** imagem/vídeo enviados: caminho no bucket `arquivos`. */
+  caminho?: string;
+  /** vídeo ou link externo. */
+  url?: string;
+  legenda?: string;
+}
+
+export interface PassoProcedimento {
+  id: string;
+  titulo: string;
+  detalhe?: string;
+  importante?: boolean;
+  caminho?: string;
+}
+
+export interface ArtigoConhecimento {
+  id: string;
+  titulo: string;
+  resumo: string;
+  tipo: 'tutorial' | 'procedimento' | 'arquivo';
+  categoria_id: string | null;
+  departamento: string | null;
+  atividade: string | null;
+  palavras_chave: string[];
+  blocos: BlocoConteudo[];
+  passos: PassoProcedimento[];
+  anexos: AnexoArquivo[];
+  publicado: boolean;
+  destaque: boolean;
+  versao: number;
+  nota_alteracao: string | null;
+  visualizacoes: number;
+  uteis: number;
+  nao_uteis: number;
+  criado_por: string | null;
+  criado_por_nome: string | null;
+  atualizado_por: string | null;
+  atualizado_por_nome: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VersaoConhecimento {
+  id: string;
+  artigo_id: string;
+  versao: number;
+  titulo: string;
+  retrato: Partial<ArtigoConhecimento>;
+  nota: string | null;
+  autor_id: string | null;
+  autor_nome: string | null;
+  created_at: string;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Ferramentas (migration 0031)                                                */
+/* -------------------------------------------------------------------------- */
+
+export interface TabelaFerramenta {
+  id: string;
+  chave: string;
+  vigencia_inicio: string;
+  titulo: string;
+  dados: Record<string, unknown>;
+  fonte: string;
+  fonte_url: string | null;
+  observacao: string | null;
+  conferido_em: string | null;
+  updated_at: string;
+}
+
+export interface CalculoSalvo {
+  id: string;
+  ferramenta: string;
+  titulo: string;
+  entrada: Record<string, unknown>;
+  resultado: Record<string, unknown>;
+  created_at: string;
+}
+
+/** Pessoa da equipe, para seletores de responsável (sem dado sensível). */
+export interface PessoaEquipe {
+  id: string;
+  nome: string;
+  area?: Area | null;
+  avatar_path?: string | null;
 }

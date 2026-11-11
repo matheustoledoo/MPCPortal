@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Bell,
+  BookOpen,
   Building2,
   Calculator,
   CalendarCheck,
@@ -14,15 +15,19 @@ import {
   ClipboardList,
   FileSpreadsheet,
   Handshake,
+  KanbanSquare,
   Home,
   LayoutDashboard,
   Link2,
   LogOut,
+  MessageCircle,
   MessagesSquare,
   Receipt,
   ScrollText,
   Settings,
   ShieldCheck,
+  Target,
+  Wrench,
   UserCircle,
   Users,
   X,
@@ -41,7 +46,7 @@ interface ItemMenu {
   /** Permissão exigida — a mesma chave que o admin marca no checkbox. */
   /** Vazio = livre para quem tem sessão (ex.: notificações). */
   permissao: string;
-  grupo: 'principal' | 'legalizacao' | 'rotina' | 'administracao' | 'areas' | 'conta';
+  grupo: 'principal' | 'legalizacao' | 'rotina' | 'comercial' | 'apoio' | 'administracao' | 'areas' | 'conta';
   selo?: string;
 }
 
@@ -53,6 +58,7 @@ const ITENS: ItemMenu[] = [
   { rotulo: 'Início', href: '/inicio', icone: Home, grupo: 'principal', permissao: PERMISSOES.telaInicio },
   { rotulo: 'Notificações', href: '/notificacoes', icone: Bell, grupo: 'principal', permissao: '' },
   { rotulo: 'Dashboard', href: '/dashboard', icone: LayoutDashboard, grupo: 'principal', permissao: PERMISSOES.telaDashboard },
+  { rotulo: 'Mensagens', href: '/chat', icone: MessageCircle, grupo: 'principal', permissao: PERMISSOES.telaChat },
   { rotulo: 'Fórum da Meta', href: '/forum', icone: MessagesSquare, grupo: 'principal', permissao: PERMISSOES.telaForum },
 
   { rotulo: 'Planilha Legalização', href: '/legalizacao', icone: FileSpreadsheet, grupo: 'legalizacao', permissao: PERMISSOES.telaLegalizacao },
@@ -60,9 +66,15 @@ const ITENS: ItemMenu[] = [
   { rotulo: 'Planilha ADM', href: '/administrativo', icone: Receipt, grupo: 'legalizacao', permissao: PERMISSOES.telaAdministrativo, selo: 'Restrito' },
   { rotulo: 'Consultas por cidade', href: '/referencias', icone: Link2, grupo: 'legalizacao', permissao: PERMISSOES.telaReferencias },
 
-  { rotulo: 'Calendário de Obrigações', href: '/calendario', icone: CalendarDays, grupo: 'rotina', permissao: PERMISSOES.telaCalendario },
+  { rotulo: 'Calendário', href: '/calendario', icone: CalendarDays, grupo: 'rotina', permissao: PERMISSOES.telaCalendario },
+  { rotulo: 'Tarefas e lembretes', href: '/tarefas', icone: KanbanSquare, grupo: 'rotina', permissao: PERMISSOES.telaTarefas },
   { rotulo: 'Integração de Clientes', href: '/integracao-clientes', icone: Handshake, grupo: 'rotina', permissao: PERMISSOES.telaIntegracao },
   { rotulo: 'Atribuições', href: '/atribuicoes', icone: CalendarCheck, grupo: 'rotina', permissao: PERMISSOES.telaAtribuicoes },
+
+  { rotulo: 'Prospecção', href: '/prospeccao', icone: Target, grupo: 'comercial', permissao: PERMISSOES.telaProspeccao },
+
+  { rotulo: 'Aprendizagem e procedimentos', href: '/conhecimento', icone: BookOpen, grupo: 'apoio', permissao: PERMISSOES.telaConhecimento },
+  { rotulo: 'Ferramentas', href: '/ferramentas', icone: Wrench, grupo: 'apoio', permissao: PERMISSOES.telaFerramentas },
 
   { rotulo: 'Usuários', href: '/usuarios', icone: Users, grupo: 'administracao', permissao: PERMISSOES.gerenciarUsuarios },
   { rotulo: 'Auditoria', href: '/auditoria', icone: ScrollText, grupo: 'administracao', permissao: PERMISSOES.telaAuditoria },
@@ -82,6 +94,8 @@ const TITULOS_GRUPO: Record<ItemMenu['grupo'], string | null> = {
   principal: null,
   legalizacao: 'Legalização',
   rotina: 'Rotina',
+  comercial: 'Comercial',
+  apoio: 'Apoio',
   administracao: 'Administração',
   areas: 'Outras áreas',
   conta: 'Conta',
@@ -142,7 +156,7 @@ export function MenuLateral({
           recolhido && 'lg:w-[74px]',
         )}
       >
-        <div className="flex h-14 shrink-0 items-center justify-between border-b border-borda px-4">
+        <div className="flex h-16 shrink-0 items-center justify-between border-b border-borda px-4">
           {recolhido ? (
             <div className="mx-auto hidden lg:block">
               <MarcaMPC tamanho="sm" somenteSimbolo />
@@ -172,7 +186,7 @@ export function MenuLateral({
         </div>
 
         <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4" aria-label="Menu principal">
-          {(['principal', 'legalizacao', 'rotina', 'administracao', 'areas'] as const).map((grupo) => {
+          {(['principal', 'legalizacao', 'rotina', 'comercial', 'apoio', 'administracao', 'areas'] as const).map((grupo) => {
             const itens = ITENS.filter(
               (item) => item.grupo === grupo && (!item.permissao || pode(perfil, item.permissao)),
             );

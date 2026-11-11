@@ -26,16 +26,17 @@ export default async function LayoutPortal({ children }: { children: React.React
 
   // Prazo vencido vira número vermelho no menu: quem abre o portal vê a
   // pendência sem precisar entrar na tela para descobrir que ela existe.
-  const [estatisticas, notificacoes] = await Promise.all([
+  const [estatisticas, notificacoes, chat] = await Promise.all([
     pode(perfil, PERMISSOES.telaProcessos) ? supabase.rpc('processos_estatisticas') : Promise.resolve({ data: null }),
     supabase.rpc('contar_notificacoes'),
+    pode(perfil, PERMISSOES.telaChat) ? supabase.rpc('chat_nao_lidas') : Promise.resolve({ data: 0 }),
   ]);
   const atrasados = Number((estatisticas.data as { atrasados?: number } | null)?.atrasados ?? 0);
   const naoLidas = Number((notificacoes.data as { nao_lidas?: number } | null)?.nao_lidas ?? 0);
 
   return (
     <div className="flex min-h-screen flex-col lg:flex-row">
-      <MenuLateral perfil={perfil} avisos={{ '/controle-legalizacao': atrasados, '/notificacoes': naoLidas }} />
+      <MenuLateral perfil={perfil} avisos={{ '/controle-legalizacao': atrasados, '/notificacoes': naoLidas, '/chat': Number(chat.data ?? 0) }} />
       <div className="flex min-w-0 flex-1 flex-col">
         <BarraSuperior perfil={perfil} />
         {children}
