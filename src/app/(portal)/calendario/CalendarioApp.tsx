@@ -5,29 +5,35 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
+  CalendarDays,
+  CalendarRange,
   Check,
   ChevronLeft,
   ChevronRight,
   ClipboardCopy,
+  ExternalLink,
   FileDown,
   Handshake,
   LayoutGrid,
   List,
   Pencil,
   Plus,
+  RefreshCw,
   Repeat,
   Users,
 } from 'lucide-react';
 
 import { EditorEvento, EditorRegra } from '@/app/(portal)/calendario/Editores';
 import { DialogoRelatorio } from '@/app/(portal)/calendario/DialogoRelatorio';
-import { Botao, Cartao, Modal, Selo, cn, useAvisos } from '@/components/ui';
+import { Botao, Cartao, Modal, ModalConfirmacao, Selo, cn, useAvisos } from '@/components/ui';
 import {
   CATEGORIAS,
   COR_CATEGORIA,
   DEPARTAMENTOS,
   DIAS_SEMANA,
   MESES,
+  MODULOS_AGENDA,
+  MODULOS_CONCLUIVEIS,
   REFERENCIAS,
   SLUG_DEPARTAMENTO,
   atrasada,
@@ -37,14 +43,18 @@ import {
   lerYmd,
   mesmaPessoa,
   ocorrencias,
+  ocorrenciasDoIntervalo,
+  ordenarPorHora,
+  rotuloModulo,
   vencLabel,
   ymd,
   type Ocorrencia,
 } from '@/lib/calendario';
 import { criarClienteNavegador } from '@/lib/supabase/client';
-import type { CategoriaCalendario, ConclusaoCalendario, Departamento, EventoCalendario, RegraCalendario } from '@/types/banco';
+import type { CategoriaCalendario, ConclusaoCalendario, Departamento, EventoCalendario, ModuloAgenda, RegraCalendario } from '@/types/banco';
 
-type Aba = 'painel' | 'cal' | 'lista' | 'regras';
+type Aba = 'painel' | 'cal' | 'semana' | 'dia' | 'lista' | 'regras';
+type Situacao = '' | 'pendentes' | 'atrasadas' | 'concluidas';
 
 export interface PessoaCalendario {
   id: string;
@@ -94,7 +104,15 @@ export function CalendarioApp({
   const [aba, setAba] = useState<Aba>(inicial.aba === 'painel' && !(permissoes.todos || permissoes.gerencia) ? 'cal' : (inicial.aba ?? 'cal'));
   const [regras, setRegras] = useState(regrasIniciais);
   const [eventos, setEventos] = useState(eventosIniciais);
-  const [feitas, setFeitas] = useState<Map<string, ConclusaoCalendario>>(new Map());
+  const [conclusoes, setFeitas] = useState<Map<string, ConclusaoCalendario>>(new Map());
+  /** Dia em foco nas visões de semana e de dia. */
+  const [foco, setFoco] = useState(inicial.data ?? hoje);
+  const [modulos, setModulos] = useState<Set<ModuloAgenda>>(() => new Set(MODULOS_AGENDA.map((m) => m.valor)));
+  const [situacao, setSituacao] = useState<Situacao>('');
+  const [origem, setOrigem] = useState<'' | 'econet' | 'equipe'>('');
+  const [cancelados, setCancelados] = useState(false);
+  const [sincronizar, setSincronizar] = useState<'incluir' | 'redefinir' | null>(null);
+  const [sincronizando, setSincronizando] = useState(false);
   const deptosPermitidos = useMemo<Departamento[]>(
     () => (permissoes.todos ? DEPARTAMENTOS : [permissoes.meuDepartamento]),
     [permissoes.todos, permissoes.meuDepartamento],
@@ -152,8 +170,11 @@ export function CalendarioApp({
 
   /** Conclusões do mês em vista e do seguinte (o início de demanda usa a data do fim). */
   const carregarConclusoes = useCallback(async () => {
-    const proximo = new Date(view.y, view.m, 1);
-    const meses = [`${view.y}-${pad(view.m)}`, `${proximo.getFullYear()}-${pad(proximo.getMonth() + 1)}`];
+    // Mês anterior e seguinte entram junto: a semana em vista pode atravessar a virada do mês.
+    const meses = [-2, -1, 0].map((d) => {
+      const x = new Date(view.y, view.m + d, 1);
+      return `${x.getFullYear()}-${pad(x.getMonth() + 1)}`;
+    });
     const { data } = await supabase.from('calendario_conclusoes').select('*').in('mes', meses);
     setFeitas(new Map(((data ?? []) as ConclusaoCalendario[]).map((c) => [c.chave, c])));
   }, [supabase, view]);
@@ -175,17 +196,55 @@ export function CalendarioApp({
     };
   }, [supabase, carregarConclusoes, carregarDados]);
 
-  const todas = useMemo(() => ocorrencias(view.y, view.m, regras, eventos, feriados, nomeDe), [view, regras, eventos, feriados, nomeDe]);
+  const todas = useMemo(() => ocorrencias(view.y, view.m, regras, eventos, feriados, nomeDe, cancelados), [view, regras, eventos, feriados, nomeDe, cancelados]);
 
-  const visiveis = useMemo(
-    () =>
-      todas.filter(
-        (o) =>
-          filtro.has(o.categoria) &&
-          (!dept || o.departamento === dept || o.visivel.includes(dept)) &&
-          (!pessoa || (pessoa === '__sem__' ? !o.responsavel : o.responsavelId === pessoa || mesmaPessoa(o.responsavel, nomes.get(pessoa) ?? pessoa))),
-      ),
-    [todas, filtro, dept, pessoa, nomes],
+  /**
+   * Itens de outros módulos chegam com a situação mantida na origem (tarefa
+   * concluída, ação de prospecção feita): contam como concluídos aqui também,
+   * mesmo que a linha de conclusão do mês ainda não tenha sido carregada.
+   */
+  const feitas = useMemo(() => {
+    const mapa = new Map(conclusoes);
+    for (const e of eventos) {
+      if (e.status !== 'concluido' || !e.status_na_origem || !e.data) continue;
+      const chave = `e:${e.id}:${e.data.slice(0, 10)}`;
+      if (!mapa.has(chave)) mapa.set(chave, { chave, mes: e.data.slice(0, 7), concluido_em: e.updated_at ?? new Date().toISOString(), concluido_por: null, concluido_por_nome: null });
+    }
+    return mapa;
+  }, [conclusoes, eventos]);
+
+  const passa = useCallback(
+    (o: Ocorrencia) => {
+      if (!filtro.has(o.categoria) || !modulos.has(o.modulo)) return false;
+      if (dept && o.departamento !== dept && !o.visivel.includes(dept)) return false;
+      if (pessoa) {
+        if (pessoa === '__sem__' ? Boolean(o.responsavel) || o.participantes.length > 0 : !(o.responsavelId === pessoa || o.participantes.includes(pessoa) || mesmaPessoa(o.responsavel, nomes.get(pessoa) ?? pessoa))) return false;
+      }
+      if (origem && (o.fonte !== 'regra' || (origem === 'econet') !== o.econet)) return false;
+      if (situacao === 'concluidas' && !feitas.has(o.chave)) return false;
+      if (situacao === 'pendentes' && (feitas.has(o.chave) || o.status === 'cancelado')) return false;
+      if (situacao === 'atrasadas' && !atrasada(o, feitas, hoje)) return false;
+      return true;
+    },
+    [filtro, modulos, dept, pessoa, nomes, origem, situacao, feitas, hoje],
+  );
+
+  const visiveis = useMemo(() => todas.filter(passa), [todas, passa]);
+
+  /** Semana (domingo a sábado) do dia em foco. */
+  const semana = useMemo(() => {
+    const d = lerYmd(foco);
+    const inicio = new Date(d);
+    inicio.setDate(d.getDate() - d.getDay());
+    return Array.from({ length: 7 }, (_, i) => {
+      const x = new Date(inicio);
+      x.setDate(inicio.getDate() + i);
+      return ymd(x);
+    });
+  }, [foco]);
+  const daSemana = useMemo(
+    () => (aba === 'semana' || aba === 'dia' ? ocorrenciasDoIntervalo(semana[0], semana[6], regras, eventos, feriados, nomeDe, cancelados).filter(passa) : []),
+    [aba, semana, regras, eventos, feriados, nomeDe, cancelados, passa],
   );
 
   const unicos = visiveis.filter((o) => !o.inicio);
@@ -194,8 +253,23 @@ export function CalendarioApp({
   const proximo = unicos.find((o) => o.data >= hoje && !feitas.has(o.chave));
 
   async function alternarFeito(chave: string) {
+    const o = todas.find((x) => x.chave === chave) ?? daSemana.find((x) => x.chave === chave);
+    // Item de outro módulo: a conclusão acontece na origem e volta para cá pelo banco.
+    if (o?.statusNaOrigem) {
+      if (!MODULOS_CONCLUIVEIS.includes(o.modulo)) {
+        avisar('info', `A situação deste item é atualizada em ${rotuloModulo(o.modulo)}. Abra o item por lá.`);
+        return;
+      }
+      const { error } = await supabase.rpc('agenda_concluir', { p_evento: o.id, p_concluir: !feitas.has(chave) });
+      if (error) avisar('erro', error.message);
+      else {
+        avisar('sucesso', feitas.has(chave) ? `Reaberto em ${rotuloModulo(o.modulo)}.` : `Concluído — ${rotuloModulo(o.modulo)} já foi atualizado.`);
+        await Promise.all([carregarDados(), carregarConclusoes()]);
+      }
+      return;
+    }
     const jaFeito = feitas.get(chave);
-    const novo = new Map(feitas);
+    const novo = new Map(conclusoes);
     const data = chave.split(':').pop() ?? '';
     if (jaFeito) novo.delete(chave);
     else novo.set(chave, { chave, mes: data.slice(0, 7), concluido_em: new Date().toISOString(), concluido_por: meuId, concluido_por_nome: meuNome });
@@ -204,9 +278,25 @@ export function CalendarioApp({
       ? await supabase.from('calendario_conclusoes').delete().eq('chave', chave)
       : await supabase.from('calendario_conclusoes').insert({ chave, mes: data.slice(0, 7), concluido_por: meuId, concluido_por_nome: meuNome });
     if (error && error.code !== '23505') {
-      setFeitas(feitas);
+      setFeitas(conclusoes);
       avisar('erro', error.message);
     }
+  }
+
+  async function sincronizarEconet(redefinir: boolean) {
+    setSincronizando(true);
+    const { data, error } = await supabase.rpc('calendario_sincronizar_econet', { p_redefinir: redefinir });
+    setSincronizando(false);
+    setSincronizar(null);
+    if (error) return avisar('erro', error.message);
+    const r = data as { incluidas: number; redefinidas: number; catalogo: number };
+    avisar(
+      'sucesso',
+      r.incluidas || r.redefinidas
+        ? `Calendário e-Conet sincronizado: ${r.incluidas} obrigação(ões) incluída(s)${r.redefinidas ? ` e ${r.redefinidas} redefinida(s)` : ''}. Nada foi duplicado.`
+        : `Tudo em dia: as ${r.catalogo} obrigações do calendário e-Conet já estão cadastradas.`,
+    );
+    void carregarDados();
   }
 
   async function alternarRegra(r: RegraCalendario) {
@@ -220,9 +310,27 @@ export function CalendarioApp({
 
   function irPara(d: Date) {
     setView({ y: d.getFullYear(), m: d.getMonth() + 1 });
+    setFoco(ymd(d));
   }
 
-  const ocorrenciaDetalhe = detalhe ? todas.find((o) => o.chave === detalhe) ?? null : null;
+  /** Anterior/próximo andam um mês, uma semana ou um dia, conforme a visão. */
+  function navegar(sentido: -1 | 1) {
+    if (aba === 'semana' || aba === 'dia') {
+      const d = lerYmd(foco);
+      d.setDate(d.getDate() + sentido * (aba === 'semana' ? 7 : 1));
+      irPara(d);
+    } else irPara(new Date(view.y, view.m - 1 + sentido, 1));
+  }
+
+  const tituloPeriodo =
+    aba === 'dia'
+      ? `${DIAS_SEMANA[lerYmd(foco).getDay()]}, ${br(foco)}`
+      : aba === 'semana'
+        ? `${br(semana[0]).slice(0, 5)} a ${br(semana[6])}`
+        : `${MESES[view.m - 1]} ${view.y}`;
+  const passo = aba === 'dia' ? 'Dia' : aba === 'semana' ? 'Semana' : 'Mês';
+
+  const ocorrenciaDetalhe = detalhe ? (todas.find((o) => o.chave === detalhe) ?? daSemana.find((o) => o.chave === detalhe) ?? null) : null;
 
   // Chegou com ?item= de outro mês (notificação): abre quando o mês certo carrega.
   useEffect(() => {
@@ -243,13 +351,11 @@ export function CalendarioApp({
       <Cartao className="p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <Botao variante="secundario" tamanho="icone" onClick={() => irPara(new Date(view.y, view.m - 2, 1))} aria-label="Mês anterior">
+            <Botao variante="secundario" tamanho="icone" onClick={() => navegar(-1)} aria-label={`${passo} anterior`}>
               <ChevronLeft className="h-4 w-4" />
             </Botao>
-            <h2 className="w-44 text-center text-lg font-semibold text-texto">
-              {MESES[view.m - 1]} {view.y}
-            </h2>
-            <Botao variante="secundario" tamanho="icone" onClick={() => irPara(new Date(view.y, view.m, 1))} aria-label="Próximo mês">
+            <h2 className="min-w-44 text-center text-lg font-semibold text-texto">{tituloPeriodo}</h2>
+            <Botao variante="secundario" tamanho="icone" onClick={() => navegar(1)} aria-label={`Próximo ${passo.toLowerCase()}`}>
               <ChevronRight className="h-4 w-4" />
             </Botao>
             <Botao variante="fantasma" tamanho="sm" onClick={() => irPara(new Date())}>
@@ -261,7 +367,9 @@ export function CalendarioApp({
             {(
               [
                 (permissoes.todos || permissoes.gerencia) && { v: 'painel' as Aba, r: 'Visão geral', i: Users },
-                { v: 'cal' as Aba, r: 'Calendário', i: LayoutGrid },
+                { v: 'cal' as Aba, r: 'Mês', i: LayoutGrid },
+                { v: 'semana' as Aba, r: 'Semana', i: CalendarRange },
+                { v: 'dia' as Aba, r: 'Dia', i: CalendarDays },
                 { v: 'lista' as Aba, r: 'Lista', i: List },
                 { v: 'regras' as Aba, r: 'Obrigações fixas', i: Repeat },
               ].filter(Boolean) as { v: Aba; r: string; i: typeof List }[]
@@ -355,6 +463,47 @@ export function CalendarioApp({
               </button>
             ))}
           </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-texto-fraco">Tipo</span>
+            {MODULOS_AGENDA.filter((m) => m.valor === 'obrigacoes' || m.valor === 'calendario' || eventos.some((e) => e.modulo === m.valor)).map((m) => (
+              <button
+                key={m.valor}
+                onClick={() =>
+                  setModulos((atual) => {
+                    const novo = new Set(atual);
+                    if (novo.has(m.valor)) novo.delete(m.valor);
+                    else novo.add(m.valor);
+                    return novo;
+                  })
+                }
+                aria-pressed={modulos.has(m.valor)}
+                className={cn(
+                  'rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset transition-colors',
+                  modulos.has(m.valor) ? 'bg-slate-800 text-white ring-slate-800' : 'bg-white text-texto-fraco ring-borda hover:text-texto',
+                )}
+              >
+                {m.rotulo}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-texto-fraco">Situação</span>
+            <select value={situacao} onChange={(e) => setSituacao(e.target.value as Situacao)} className="h-8 rounded-full border border-borda-forte bg-white px-3 text-xs" aria-label="Filtrar por situação">
+              <option value="">Todas</option>
+              <option value="pendentes">Pendentes</option>
+              <option value="atrasadas">Atrasadas</option>
+              <option value="concluidas">Concluídas</option>
+            </select>
+            <select value={origem} onChange={(e) => setOrigem(e.target.value as '' | 'econet' | 'equipe')} className="h-8 rounded-full border border-borda-forte bg-white px-3 text-xs" aria-label="Filtrar pela origem da obrigação">
+              <option value="">Qualquer origem</option>
+              <option value="econet">Só obrigações do e-Conet</option>
+              <option value="equipe">Só obrigações criadas pela equipe</option>
+            </select>
+            <label className="flex cursor-pointer items-center gap-1.5 text-xs text-texto-suave">
+              <input type="checkbox" checked={cancelados} onChange={(e) => setCancelados(e.target.checked)} className="h-3.5 w-3.5 accent-[var(--color-marca-600)]" />
+              Mostrar cancelados
+            </label>
+          </div>
         </div>
 
         <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 border-t border-borda pt-3 text-sm text-texto-suave">
@@ -421,6 +570,93 @@ export function CalendarioApp({
         </div>
       )}
 
+      {aba === 'semana' && (
+        <Cartao className="overflow-hidden">
+          <div className="grid grid-cols-1 divide-y divide-borda md:grid-cols-7 md:divide-x md:divide-y-0">
+            {semana.map((ds) => {
+              const d = lerYmd(ds);
+              const itens = ordenarPorHora(daSemana.filter((o) => o.data === ds));
+              const feriado = feriados.doAno(d.getFullYear()).get(ds);
+              return (
+                <div key={ds} className={cn('flex min-h-[140px] flex-col md:min-h-[460px]', (d.getDay() === 0 || d.getDay() === 6) && 'bg-slate-50', feriado && 'bg-red-50/60')}>
+                  <button
+                    onClick={() => {
+                      setFoco(ds);
+                      setAba('dia');
+                    }}
+                    className="flex items-center justify-between gap-2 border-b border-borda px-2.5 py-2 text-left hover:bg-marca-50/50"
+                    title="Abrir o dia"
+                  >
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-texto-fraco">{DIAS_SEMANA[d.getDay()]}</span>
+                    <span className={cn('flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-xs font-semibold', ds === hoje ? 'bg-marca-600 text-white' : 'text-texto')}>{d.getDate()}</span>
+                  </button>
+                  <div className="flex-1 space-y-1 p-1.5">
+                    {feriado && filtro.has('Feriado') && <p className="truncate px-1 text-[10px] font-semibold text-red-700">{feriado}</p>}
+                    {itens.map((o) => (
+                      <CartaoOcorrencia key={o.chave} o={o} feita={feitas.has(o.chave)} atrasado={atrasada(o, feitas, hoje)} aoAbrir={() => setDetalhe(o.chave)} />
+                    ))}
+                    {itens.length === 0 && <p className="px-1 py-2 text-[11px] text-texto-fraco">—</p>}
+                    {podeCriar && (
+                      <button onClick={() => setEditandoEvento({ evento: null, data: ds })} className="flex w-full items-center justify-center gap-1 rounded py-1 text-[11px] font-medium text-texto-fraco hover:bg-white hover:text-marca-700" aria-label={`Novo compromisso em ${br(ds)}`}>
+                        <Plus className="h-3 w-3" /> adicionar
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Cartao>
+      )}
+
+      {aba === 'dia' && (
+        <Cartao>
+          {(() => {
+            const itens = ordenarPorHora(daSemana.filter((o) => o.data === foco));
+            const comHora = itens.filter((o) => o.hora);
+            const diaTodo = itens.filter((o) => !o.hora);
+            const feriado = feriados.doAno(lerYmd(foco).getFullYear()).get(foco);
+            return (
+              <div className="divide-y divide-borda">
+                <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3">
+                  <p className="text-sm text-texto-suave">
+                    <strong className="text-texto">{itens.length}</strong> item(ns) no dia{feriado ? ` · ${feriado}` : ''}{foco === hoje ? ' · hoje' : ''}
+                  </p>
+                  {podeCriar && (
+                    <Botao tamanho="sm" variante="secundario" onClick={() => setEditandoEvento({ evento: null, data: foco })}>
+                      <Plus className="h-3.5 w-3.5" /> Novo neste dia
+                    </Botao>
+                  )}
+                </div>
+                {itens.length === 0 && <p className="px-5 py-12 text-center text-sm text-texto-suave">Nada neste dia com os filtros atuais.</p>}
+                {comHora.length > 0 && (
+                  <ol className="px-5 py-3">
+                    {comHora.map((o) => (
+                      <li key={o.chave} className="grid grid-cols-[56px_1fr] gap-3 py-1.5">
+                        <span className="pt-1.5 text-right text-xs font-semibold tabular-nums text-texto-suave">{o.hora}</span>
+                        <CartaoOcorrencia o={o} grande feita={feitas.has(o.chave)} atrasado={atrasada(o, feitas, hoje)} aoAbrir={() => setDetalhe(o.chave)} />
+                      </li>
+                    ))}
+                  </ol>
+                )}
+                {diaTodo.length > 0 && (
+                  <div className="px-5 py-3">
+                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-texto-fraco">Vence no dia / sem horário</p>
+                    <ul className="grid gap-1.5 sm:grid-cols-2">
+                      {diaTodo.map((o) => (
+                        <li key={o.chave}>
+                          <CartaoOcorrencia o={o} grande feita={feitas.has(o.chave)} atrasado={atrasada(o, feitas, hoje)} aoAbrir={() => setDetalhe(o.chave)} />
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </Cartao>
+      )}
+
       {aba === 'lista' && (
         <ListaDias titulo={`${MESES[view.m - 1]} ${view.y}`} itens={visiveis} feitas={feitas} hoje={hoje} mostrarDept={!dept} aoAbrir={setDetalhe} aoAlternar={(k) => void alternarFeito(k)} />
       )}
@@ -429,12 +665,23 @@ export function CalendarioApp({
         <Cartao className="overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-borda px-5 py-3">
             <p className="max-w-2xl text-sm text-texto-suave">Obrigações que se repetem sozinhas. Desligue as que não se aplicam, ajuste o dia ou crie novas.</p>
-            {podeCriar && (
-              <Botao tamanho="sm" onClick={() => setEditandoRegra(null)}>
-                <Plus className="h-3.5 w-3.5" /> Nova obrigação fixa
-              </Botao>
-            )}
+            <div className="flex flex-wrap gap-2">
+              {permissoes.todos && (
+                <Botao tamanho="sm" variante="secundario" onClick={() => setSincronizar('incluir')} title="Inclui as obrigações do calendário anual e-Conet que estiverem faltando, sem duplicar">
+                  <RefreshCw className="h-3.5 w-3.5" /> Sincronizar e-Conet
+                </Botao>
+              )}
+              {podeCriar && (
+                <Botao tamanho="sm" onClick={() => setEditandoRegra(null)}>
+                  <Plus className="h-3.5 w-3.5" /> Nova obrigação fixa
+                </Botao>
+              )}
+            </div>
           </div>
+          <p className="border-b border-borda bg-superficie px-5 py-2 text-xs text-texto-suave">
+            <Selo tom="info" className="mr-1.5 text-[10px]">e-Conet</Selo>
+            obrigação legal do calendário anual e-Conet ({regras.filter((r) => r.fonte === 'econet').length} cadastradas). As demais foram criadas pela equipe. Os vencimentos são calculados aqui (dia útil, feriados), a partir da regra de cada obrigação.
+          </p>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[960px] text-sm">
               <thead className="bg-superficie text-left text-[11px] uppercase tracking-wide text-texto-suave">
@@ -452,7 +699,7 @@ export function CalendarioApp({
               </thead>
               <tbody className="divide-y divide-borda">
                 {[...regras]
-                  .filter((r) => !dept || r.departamento === dept)
+                  .filter((r) => (!dept || r.departamento === dept) && (!origem || (origem === 'econet') === (r.fonte === 'econet')))
                   .sort((a, b) => CATEGORIAS.indexOf(a.categoria) - CATEGORIAS.indexOf(b.categoria) || a.nome.localeCompare(b.nome, 'pt-BR'))
                   .map((r) => (
                     <tr key={r.id} className={cn(!r.ativo && 'opacity-50')}>
@@ -469,7 +716,14 @@ export function CalendarioApp({
                         </button>
                       </td>
                       <td className="px-3 py-2.5">
-                        <p className="font-medium text-texto">{r.nome}</p>
+                        <p className="font-medium text-texto">
+                          {r.nome}
+                          {r.fonte === 'econet' && (
+                            <Selo tom="info" className="ml-1.5 align-middle text-[10px]">
+                              e-Conet{r.conferido_em ? ` · conferida ${br(r.conferido_em).slice(0, 5)}` : ''}
+                            </Selo>
+                          )}
+                        </p>
                         {r.descricao && <p className="text-xs text-texto-suave">{r.descricao}</p>}
                       </td>
                       <td className="px-3 py-2.5">
@@ -505,7 +759,7 @@ export function CalendarioApp({
         hoje={hoje}
         aoFechar={() => setDetalhe(null)}
         aoAlternar={() => ocorrenciaDetalhe && void alternarFeito(ocorrenciaDetalhe.chave)}
-        podeEditar={ocorrenciaDetalhe ? podeEditar(ocorrenciaDetalhe.departamento) : false}
+        podeEditar={ocorrenciaDetalhe ? (ocorrenciaDetalhe.fonte === 'regra' || ocorrenciaDetalhe.modulo === 'calendario') && podeEditar(ocorrenciaDetalhe.departamento) : false}
         podeIntegracao={permissoes.podeIntegracao}
         aoEditar={() => {
           if (!ocorrenciaDetalhe) return;
@@ -534,6 +788,28 @@ export function CalendarioApp({
           />
         )}
       </Modal>
+
+      <ModalConfirmacao
+        aberto={Boolean(sincronizar)}
+        aoFechar={() => setSincronizar(null)}
+        aoConfirmar={() => void sincronizarEconet(sincronizar === 'redefinir')}
+        carregando={sincronizando}
+        perigoso={sincronizar === 'redefinir'}
+        titulo={sincronizar === 'redefinir' ? 'Redefinir para o padrão e-Conet?' : 'Sincronizar com o calendário e-Conet'}
+        rotuloConfirmar={sincronizar === 'redefinir' ? 'Redefinir' : 'Sincronizar'}
+        mensagem={
+          sincronizar === 'redefinir' ? (
+            'As obrigações de origem e-Conet voltam ao dia, à regra de vencimento e à descrição do catálogo. Responsáveis e obrigações criadas pela equipe não mudam.'
+          ) : (
+            <>
+              Inclui as obrigações do calendário anual e-Conet que não estiverem cadastradas. Nada é duplicado e os ajustes já feitos pela equipe são preservados.
+              <button className="mt-2 block text-xs font-medium text-marca-700 hover:underline" onClick={() => setSincronizar('redefinir')}>
+                Quero também redefinir as existentes para o padrão do catálogo…
+              </button>
+            </>
+          )
+        }
+      />
 
       <EditorEvento
         aberto={Boolean(editandoEvento)}
@@ -587,6 +863,36 @@ function PilulaCategoria({ c }: { c: CategoriaCalendario }) {
     <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: `${COR_CATEGORIA[c]}18`, color: COR_CATEGORIA[c] }}>
       {c}
     </span>
+  );
+}
+
+/** De onde o item veio: e-Conet, ou o módulo que o publicou na agenda. */
+function SeloOrigem({ o }: { o: Ocorrencia }) {
+  if (o.fonte === 'regra') return o.econet ? <Selo tom="info" className="text-[10px]">e-Conet</Selo> : null;
+  if (o.modulo === 'calendario') return null;
+  return <Selo tom="marca" className="text-[10px]">{MODULOS_AGENDA.find((m) => m.valor === o.modulo)?.rotuloCurto ?? o.modulo}</Selo>;
+}
+
+function CartaoOcorrencia({ o, feita, atrasado, grande = false, aoAbrir }: { o: Ocorrencia; feita: boolean; atrasado: boolean; grande?: boolean; aoAbrir: () => void }) {
+  return (
+    <button
+      onClick={aoAbrir}
+      title={o.titulo}
+      className={cn(
+        'block w-full rounded border-l-[3px] text-left transition-colors hover:brightness-95',
+        grande ? 'px-3 py-2' : 'px-1.5 py-1',
+        (feita || o.status === 'cancelado') && 'opacity-55',
+        atrasado && 'ring-1 ring-inset ring-red-300',
+      )}
+      style={{ borderColor: COR_CATEGORIA[o.categoria], background: `${COR_CATEGORIA[o.categoria]}14` }}
+    >
+      <span className={cn('block font-medium leading-tight text-texto', grande ? 'text-sm' : 'line-clamp-2 text-[11px]', (feita || o.status === 'cancelado') && 'line-through')}>{o.titulo}</span>
+      <span className={cn('mt-0.5 flex flex-wrap items-center gap-1 text-texto-suave', grande ? 'text-xs' : 'text-[10px]')}>
+        {grande && <span>{[o.responsavel ? `👤 ${o.responsavel}` : '', o.departamento, o.empresa].filter(Boolean).join(' · ')}</span>}
+        <SeloOrigem o={o} />
+        {atrasado && <Selo tom="erro" className="text-[10px]">Atrasado</Selo>}
+      </span>
+    </button>
   );
 }
 
@@ -739,8 +1045,10 @@ function ListaDias({
                       <input
                         type="checkbox"
                         checked={feito}
+                        disabled={o.status === 'cancelado' || (o.statusNaOrigem && !MODULOS_CONCLUIVEIS.includes(o.modulo))}
+                        title={o.statusNaOrigem && !MODULOS_CONCLUIVEIS.includes(o.modulo) ? `A situação é atualizada em ${rotuloModulo(o.modulo)}` : undefined}
                         onChange={() => aoAlternar(o.chave)}
-                        className="mt-1 h-4 w-4 shrink-0 rounded border-borda-forte text-marca-600"
+                        className="mt-1 h-4 w-4 shrink-0 rounded border-borda-forte text-marca-600 disabled:opacity-40"
                         aria-label={`Marcar ${o.titulo} como concluído`}
                       />
                       <button onClick={() => aoAbrir(o.chave)} className="min-w-0 flex-1 text-left">
@@ -751,6 +1059,8 @@ function ListaDias({
                       </button>
                       <span className="flex shrink-0 flex-col items-end gap-1">
                         <PilulaCategoria c={o.categoria} />
+                        <SeloOrigem o={o} />
+                        {o.status === 'cancelado' && <Selo tom="neutro" className="text-[10px]">Cancelado</Selo>}
                         {late && <Selo tom="erro" className="text-[10px]">Atrasado</Selo>}
                       </span>
                     </li>
@@ -812,6 +1122,8 @@ function Detalhe({
     if (o.contato) linhas.push(['Contato', o.contato]);
     if (o.modalidade) linhas.push(['Modalidade', o.modalidade]);
   }
+  if (o.fonte === 'regra') linhas.push(['Origem', o.econet ? <span key="o"><Selo tom="info">e-Conet</Selo> calendário anual de obrigações</span> : 'Obrigação criada pela equipe']);
+  else if (o.modulo !== 'calendario') linhas.push(['Origem', <span key="o"><Selo tom="marca">{rotuloModulo(o.modulo)}</Selo></span>]);
   linhas.push(['Departamento', o.departamento]);
   linhas.push(['Designado para', o.responsavel || <span className="text-texto-fraco">Não definido</span>]);
   linhas.push(['Esfera', <PilulaCategoria key="c" c={o.categoria} />]);
@@ -821,7 +1133,9 @@ function Detalhe({
   if (o.descricao) linhas.push(['Observações', <span key="d" className="whitespace-pre-wrap">{o.descricao}</span>]);
   linhas.push([
     'Situação',
-    feita ? (
+    o.status === 'cancelado' ? (
+      <Selo tom="neutro">Cancelado</Selo>
+    ) : feita ? (
       <span>
         <Selo tom="sucesso">Concluído</Selo> em {new Date(feita.concluido_em).toLocaleDateString('pt-BR')}
         {feita.concluido_por_nome ? ` por ${feita.concluido_por_nome}` : ''}
@@ -842,9 +1156,18 @@ function Detalhe({
       rodape={
         <div className="flex w-full flex-wrap items-center justify-between gap-2">
           <div className="flex gap-2">
-            <Botao onClick={aoAlternar} variante={feita ? 'secundario' : 'primario'}>
-              <Check className="h-4 w-4" /> {feita ? 'Reabrir' : 'Marcar como concluído'}
-            </Botao>
+            {o.status !== 'cancelado' && (!o.statusNaOrigem || MODULOS_CONCLUIVEIS.includes(o.modulo)) && (
+              <Botao onClick={aoAlternar} variante={feita ? 'secundario' : 'primario'}>
+                <Check className="h-4 w-4" /> {feita ? 'Reabrir' : 'Marcar como concluído'}
+              </Botao>
+            )}
+            {o.link && (
+              <Link href={o.link}>
+                <Botao variante="secundario">
+                  <ExternalLink className="h-4 w-4" /> Abrir em {rotuloModulo(o.modulo)}
+                </Botao>
+              </Link>
+            )}
             {o.tipo === 'Reunião de Integração' && podeIntegracao && (
               <Botao variante="secundario" onClick={aoIntegracao}>
                 <Handshake className="h-4 w-4" /> Abrir roteiro de integração
@@ -859,6 +1182,9 @@ function Detalhe({
         </div>
       }
     >
+      {o.statusNaOrigem && !MODULOS_CONCLUIVEIS.includes(o.modulo) && (
+        <p className="mb-3 rounded-lg bg-superficie px-3 py-2 text-xs text-texto-suave">A situação deste item acompanha {rotuloModulo(o.modulo)}: quando ele for concluído ou alterado por lá, o calendário se atualiza sozinho.</p>
+      )}
       <dl className="grid grid-cols-[150px_1fr] gap-x-4 gap-y-2 text-sm">
         {linhas.map(([k, v]) => (
           <div key={k} className="contents">

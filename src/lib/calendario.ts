@@ -8,14 +8,7 @@
  * usada pelas notificações; os dois lados foram conferidos dia a dia.
  */
 
-import type {
-  CategoriaCalendario,
-  ConclusaoCalendario,
-  Departamento,
-  EventoCalendario,
-  ReferenciaCompetencia,
-  RegraCalendario,
-} from '@/types/banco';
+import type { CategoriaCalendario, ConclusaoCalendario, Departamento, EventoCalendario, ModuloAgenda, ReferenciaCompetencia, RegraCalendario, StatusAgenda } from '@/types/banco';
 
 export const DEPARTAMENTOS: Departamento[] = ['Matriz', 'Fiscal', 'Departamento Pessoal', 'Contabilidade', 'Legalização', 'Qualidade'];
 
@@ -207,10 +200,37 @@ export function vencLabel(r: RegraCalendario): string {
 /* Ocorrências do mês                                                          */
 /* -------------------------------------------------------------------------- */
 
+/** Módulos que publicam na agenda central (migration 0025). */
+export const MODULOS_AGENDA: { valor: ModuloAgenda; rotulo: string; rotuloCurto: string }[] = [
+  { valor: 'obrigacoes', rotulo: 'Obrigações fixas', rotuloCurto: 'Obrigação' },
+  { valor: 'calendario', rotulo: 'Compromissos, demandas e reuniões', rotuloCurto: 'Compromisso' },
+  { valor: 'tarefas', rotulo: 'Tarefas e lembretes', rotuloCurto: 'Tarefa' },
+  { valor: 'processos', rotulo: 'Controle Legalização', rotuloCurto: 'Legalização' },
+  { valor: 'documentos', rotulo: 'Licenças e documentos', rotuloCurto: 'Documento' },
+  { valor: 'integracao', rotulo: 'Integração de clientes', rotuloCurto: 'Integração' },
+  { valor: 'prospeccao', rotulo: 'Prospecção', rotuloCurto: 'Prospecção' },
+  { valor: 'atribuicoes', rotulo: 'Atribuições', rotuloCurto: 'Atribuição' },
+];
+
+export const rotuloModulo = (m: ModuloAgenda) => MODULOS_AGENDA.find((x) => x.valor === m)?.rotulo ?? m;
+
+/** Módulos em que o calendário consegue concluir o item na própria origem (`agenda_concluir`). */
+export const MODULOS_CONCLUIVEIS: ModuloAgenda[] = ['tarefas', 'prospeccao', 'atribuicoes'];
+
 export interface Ocorrencia {
   chave: string;
   fonte: 'regra' | 'evento';
   id: string;
+  /** Quem publicou: o próprio calendário, as obrigações fixas ou outro módulo. */
+  modulo: ModuloAgenda;
+  /** Tela de origem do item (módulos) — "Abrir em…". */
+  link: string | null;
+  status: StatusAgenda;
+  participantes: string[];
+  /** A situação é mantida pelo módulo de origem, não pelo calendário. */
+  statusNaOrigem: boolean;
+  /** Obrigação legal do calendário anual e-Conet. */
+  econet: boolean;
   titulo: string;
   data: string;
   /** Prazo final (para o início de uma demanda, é a data do fim). */
@@ -243,6 +263,7 @@ export function ocorrencias(
   eventos: EventoCalendario[],
   f: Feriados,
   nomeDe: (id: string | null) => string | null,
+  incluirCancelados = false,
 ): Ocorrencia[] {
   const saida: Ocorrencia[] = [];
   const prefixo = `${y}-${pad(m)}`;
@@ -262,6 +283,12 @@ export function ocorrencias(
         chave: `r:${r.id}:${ds}`,
         fonte: 'regra',
         id: r.id,
+        modulo: 'obrigacoes',
+        link: null,
+        status: 'pendente',
+        participantes: [],
+        statusNaOrigem: false,
+        econet: r.fonte === 'econet',
         titulo: r.nome,
         data: ds,
         prazo: ds,
@@ -287,6 +314,7 @@ export function ocorrencias(
 
   for (const e of eventos) {
     if (!e.data || e.categoria === 'Feriado') continue;
+    if (e.status === 'cancelado' && !incluirCancelados) continue;
     const dataEvento = e.data.slice(0, 10);
     const s = lerYmd(dataEvento);
     let ds: string | null = null;
@@ -306,6 +334,12 @@ export function ocorrencias(
     const base = {
       fonte: 'evento' as const,
       id: e.id,
+      modulo: e.modulo ?? ('calendario' as ModuloAgenda),
+      link: e.link ?? null,
+      status: e.status ?? ('pendente' as StatusAgenda),
+      participantes: e.participantes ?? [],
+      statusNaOrigem: Boolean(e.status_na_origem),
+      econet: false,
       categoria: e.categoria,
       tipo: e.tipo || '',
       visivel: e.visivel_para ?? [],
@@ -364,5 +398,29 @@ export function mesmaPessoa(a: string | null | undefined, b: string | null | und
 
 /** Atrasado: prazo antes de hoje e não concluído. */
 export function atrasada(o: Ocorrencia, feitas: Map<string, ConclusaoCalendario>, hoje = hojeYmd()): boolean {
-  return (o.prazo || o.data) < hoje && !feitas.has(o.chave);
+  return o.status === 'pendente' && (o.prazo || o.data) < hoje && !feitas.has(o.chave);
+}
+
+/** Tudo que cai entre duas datas (inclusive), mesmo atravessando meses. */
+export function ocorrenciasDoIntervalo(
+  inicio: string,
+  fim: string,
+  regras: RegraCalendario[],
+  eventos: EventoCalendario[],
+  f: Feriados,
+  nomeDe: (id: string | null) => string | null,
+  incluirCancelados = false,
+): Ocorrencia[] {
+  const saida: Ocorrencia[] = [];
+  const a = lerYmd(inicio);
+  const b = lerYmd(fim);
+  for (let d = new Date(a.getFullYear(), a.getMonth(), 1); d <= b; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) {
+    saida.push(...ocorrencias(d.getFullYear(), d.getMonth() + 1, regras, eventos, f, nomeDe, incluirCancelados));
+  }
+  return saida.filter((o) => o.data >= inicio && o.data <= fim);
+}
+
+/** Com horário primeiro (em ordem), depois o que vale para o dia inteiro. */
+export function ordenarPorHora(lista: Ocorrencia[]): Ocorrencia[] {
+  return [...lista].sort((x, y) => (x.hora || '99:99').localeCompare(y.hora || '99:99') || x.titulo.localeCompare(y.titulo, 'pt-BR'));
 }

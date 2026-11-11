@@ -58,9 +58,11 @@ export async function marcarNotificacoes(
 }
 
 /** A notificação permite concluir a tarefa de origem ali mesmo? */
-export function acaoDeOrigem(n: Notificacao): 'calendario' | 'atribuicao' | null {
+export function acaoDeOrigem(n: Notificacao): 'calendario' | 'atribuicao' | 'agenda' | null {
   const acao = (n.dados as { acao?: string })?.acao;
   if (acao === 'concluir_calendario') return 'calendario';
+  // Item de outro módulo (tarefa, ação de prospecção…): quem conclui é a origem.
+  if (acao === 'concluir_agenda') return 'agenda';
   if (acao === 'concluir_atribuicao') return 'atribuicao';
   return null;
 }
@@ -83,6 +85,10 @@ export async function concluirOrigem(
       { chave, mes: data.slice(0, 7), concluido_por: meuId, concluido_por_nome: meuNome },
       { onConflict: 'chave', ignoreDuplicates: true },
     );
+    if (error) throw new Error(error.message);
+  } else if (tipo === 'agenda') {
+    const evento = String((n.dados as { evento_id?: string }).evento_id ?? '');
+    const { error } = await supabase.rpc('agenda_concluir', { p_evento: evento, p_concluir: true });
     if (error) throw new Error(error.message);
   } else if (tipo === 'atribuicao') {
     const id = String((n.dados as { atribuicao_id?: string }).atribuicao_id ?? '');
