@@ -932,8 +932,10 @@ export interface BlocoConteudo {
 export interface PassoProcedimento {
   id: string;
   titulo: string;
-  detalhe?: string;
+  descricao?: string;
+  /** Etapa que merece atenção redobrada: ganha destaque visual. */
   importante?: boolean;
+  /** Imagem ilustrativa (caminho no bucket `arquivos`). */
   caminho?: string;
 }
 
