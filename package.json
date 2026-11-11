@@ -13,7 +13,8 @@
     "import:planilhas:sql": "tsx scripts/import-planilhas.ts --emit-sql",
     "seed:usuarios": "tsx scripts/seed-usuarios.ts",
     "import:referencias": "tsx scripts/import-referencias.ts",
-    "migrations:juntar": "tsx scripts/juntar-migrations.ts"
+    "migrations:juntar": "tsx scripts/juntar-migrations.ts",
+    "test": "tsx --test src/lib/ferramentas/calculos.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",
